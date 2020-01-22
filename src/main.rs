@@ -3,6 +3,44 @@ use itertools::Itertools;
 use petgraph::graph::Graph;
 use petgraph::dot::Dot;
 
+use std::fs::File;
+use std::io;
+use std::process;
+use std::error::Error;
+use std::io::{BufRead, BufReader};
+use csv::StringRecord;
+
+struct LabeledPoint {
+    point: Array1<f64>,
+    label: f64
+}
+
+impl LabeledPoint {
+    fn from_record(record: &StringRecord) -> LabeledPoint {
+        let label = record[record.len() - 1].parse::<f64>().expect("Expected a float");
+        let point = record.iter()
+            .take(record.len() - 1)
+            .map(|v| v.parse::<f64>().expect("Expected a float"))
+            .collect();
+        LabeledPoint{point, label}
+    }
+
+    fn points_from_file(filename: &str) -> Result<Vec<LabeledPoint>, Box<dyn Error>> {
+        let f = File::open(filename).expect("Unable to open file");
+        let f = BufReader::new(f);
+        let mut points = Vec::with_capacity(16);
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_reader(f);
+        for result in rdr.records() {
+            let mut record = result?;
+            record.trim();
+            points.push(LabeledPoint::from_record(&record));
+        }
+        Ok(points)
+    }
+}
+
 fn pairwise_distance(points: ArrayView2<f64>) -> Array2<f64> {
     let mut pairwise = Array2::zeros((points.shape()[0], points.shape()[0]));
     for (i, row) in points.outer_iter().enumerate() {
@@ -41,11 +79,25 @@ fn build_knn(points: ArrayView2<f64>, k: usize) -> Graph<Array1<f64>, f64, petgr
     neighbor_graph
 }
 
+fn build_matrix_from_points(points: &[LabeledPoint]) -> Array2<f64> {
+    // TODO: Error handling
+    let shape = (points.len(), points[0].point.len());
+    let mut arr = Array2::zeros(shape);
+    for (i, mut row) in arr.axis_iter_mut(Axis(0)).enumerate() {
+        row.assign(&points[i].point);
+    }
+    arr
+}
+
 fn main() {
-    let points = arr2(&[[1., 2.],
-                  [3., 3.],
-                  [0., 0.],
-                  [-1., 1.]]);
+    let points = match LabeledPoint::points_from_file("points.txt") {
+        Ok(points) => points,
+        Err(e) => {
+            println!("Failed to parse points: {}", e);
+            panic!();
+        }
+    };
+    let points = build_matrix_from_points(&points);
     let pairwise = pairwise_distance(points.view());
     println!("Pairwise is {:?}", pairwise);
     let graph = build_knn(points.view(), 2);
