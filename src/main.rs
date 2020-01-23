@@ -10,6 +10,7 @@ use std::error::Error;
 use std::io::{BufRead, BufReader};
 use csv::StringRecord;
 
+#[derive(Debug)]
 struct LabeledPoint {
     point: Array1<f64>,
     label: f64
@@ -23,6 +24,11 @@ impl LabeledPoint {
             .map(|v| v.parse::<f64>().expect("Expected a float"))
             .collect();
         LabeledPoint{point, label}
+    }
+
+    fn to_owned(&self) -> LabeledPoint {
+        // This is basically clone? I'm just copying the name from ndarray for now
+        LabeledPoint{label: self.label, point: self.point.to_owned()}
     }
 
     fn points_from_file(filename: &str) -> Result<Vec<LabeledPoint>, Box<dyn Error>> {
@@ -41,15 +47,15 @@ impl LabeledPoint {
     }
 }
 
-fn pairwise_distance(points: ArrayView2<f64>) -> Array2<f64> {
-    let mut pairwise = Array2::zeros((points.shape()[0], points.shape()[0]));
-    for (i, row) in points.outer_iter().enumerate() {
-        for (j, other) in points.slice(s![i.., ..]).outer_iter().enumerate() {
+fn pairwise_distance(points: &[LabeledPoint]) -> Array2<f64> {
+    let mut pairwise = Array2::zeros((points.len(), points.len()));
+    for (i, row) in points.iter().enumerate() {
+        for (j, other) in points[i..].iter().enumerate() {
             let j = j+i;
             let distance = if i == j {
                 0.
             } else {
-                let diff = &row - &other;
+                let diff = &row.point - &other.point;
                 diff.dot(&diff).sqrt()
             };
             pairwise[[i,j]] = distance;
@@ -59,15 +65,15 @@ fn pairwise_distance(points: ArrayView2<f64>) -> Array2<f64> {
     pairwise
 }
 
-fn build_knn(points: ArrayView2<f64>, k: usize) -> Graph<Array1<f64>, f64, petgraph::Undirected> {
+fn build_knn(points: &[LabeledPoint], k: usize) -> Graph<LabeledPoint, f64, petgraph::Undirected> {
     let mut neighbor_graph = Graph::new_undirected();
-    let mut node_lookup = Vec::with_capacity(points.shape()[0]);
-    for point in points.outer_iter() {
+    let mut node_lookup = Vec::with_capacity(points.len());
+    for point in points {
         let node = neighbor_graph.add_node(point.to_owned());
         node_lookup.push(node);
     }
     let pairwise = pairwise_distance(points);
-    for (i, _) in points.outer_iter().enumerate() {
+    for (i, _) in points.iter().enumerate() {
         pairwise.slice(s![i, ..]).into_iter().enumerate()
             .filter(|(j, _)| i != *j)
             .sorted_by(|(_, val), (_, other)| val.partial_cmp(other).unwrap())
@@ -79,15 +85,17 @@ fn build_knn(points: ArrayView2<f64>, k: usize) -> Graph<Array1<f64>, f64, petgr
     neighbor_graph
 }
 
-fn build_matrix_from_points(points: &[LabeledPoint]) -> Array2<f64> {
-    // TODO: Error handling
-    let shape = (points.len(), points[0].point.len());
-    let mut arr = Array2::zeros(shape);
-    for (i, mut row) in arr.axis_iter_mut(Axis(0)).enumerate() {
-        row.assign(&points[i].point);
-    }
-    arr
+/*
+fn find_local_maximum(node: NodeIndex, graph: Graph<Array1<f64>, f64, petgraph::Undirected>) -> NodeIndex {
+    let this_point = graph.node_weight(node);
+    graph.neighbors(node)
+        .filter(
 }
+
+fn partition_graph_by_steepest_ascent(graph: Graph<Array1<f64>, f64, petgraph::Undirected>) {
+
+}
+*/
 
 fn main() {
     let points = match LabeledPoint::points_from_file("points.txt") {
@@ -97,10 +105,7 @@ fn main() {
             panic!();
         }
     };
-    let points = build_matrix_from_points(&points);
-    let pairwise = pairwise_distance(points.view());
-    println!("Pairwise is {:?}", pairwise);
-    let graph = build_knn(points.view(), 2);
+    let graph = build_knn(&points, 2);
     println!("Graph is {:?}", graph);
     println!("{:?}", Dot::with_config(&graph, &[]));
 }
