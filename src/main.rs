@@ -9,6 +9,7 @@ use std::process;
 use std::error::Error;
 use std::io::{BufRead, BufReader};
 use csv::StringRecord;
+use partitions::partition_vec::PartitionVec;
 
 #[derive(Debug)]
 struct LabeledPoint {
@@ -111,6 +112,75 @@ fn partition_graph_by_steepest_ascent(graph: &Graph<LabeledPoint, f64, petgraph:
     for node in graph.node_indices() {
         let neighbor = find_steepest_neighbor(node, graph);
         println!("For {:?}, steepest neighbor was {:?}", node, neighbor);
+    }
+}
+
+fn get_descending_nodes(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) -> PartitionVec<NodeIndex> {
+    let mut nodes: PartitionVec<NodeIndex> = graph.node_indices().collect();
+    nodes.sort_by(|a, b| {
+            let a_node = graph.node_weight(*a).expect("Node a wasn't in graph");
+            let b_node = graph.node_weight(*b).expect("Node b wasn't in graph");
+            b_node.label.partial_cmp(&a_node.label).expect("Nan in the labels")
+        });
+    nodes
+}
+
+// TODO: I'm not convinced PartitionVec is helping me. I need a pointed set and
+// that isn't what it gives me. I need a new struct, something like
+
+struct MorseNode {
+    node: NodeIndex,
+    maxima: NodeIndex
+}
+
+// This signature sucks so much
+fn merge_crystals(node: &NodeIndex, list_index: usize, higher_neighbors: &Vec<(usize, &NodeIndex)>,
+                  ordered_nodes: &mut PartitionVec<NodeIndex>,
+                  lifetimes: &mut Vec<f64>, graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) {
+    // guard against the no-neighbor case
+    if higher_neighbors.is_empty() {
+        return;
+    }
+    // simplest case: one neighbor
+    if higher_neighbors.len() == 1 {
+        let neighbor_index = higher_neighbors[0].0;
+        ordered_nodes.union(list_index, neighbor_index);
+        return;
+    }
+
+    // slightly worse: multiple neighbors, but all same set
+    // perhaps what should be done here is: find the maximum for each
+    let neighbors_differ = higher_neighbors.iter().fold( (true, None), |acc, x| {
+
+    });
+}
+
+fn compute_persistence(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) {
+    let mut ordered_nodes = get_descending_nodes(graph);
+    let mut lifetimes = Vec::with_capacity(ordered_nodes.len());
+    // for each node, see if it is connected to any other nodes already revealed
+    // if not, then it is a maximum, i'll need to log that somehow
+    // if so, then it is not a maximum. union with its neighbor
+    // if there's more than one edge, and they belong to the same maximum, keep going
+    // if they unite different maxima, then union the lower one(s) and log the lifetimes
+    for (i, &node) in ordered_nodes.iter().enumerate() {
+        let labeled_point = graph.node_weight(node).expect("Node wasn't in graph");
+        let higher_neighbors: Vec<_> = ordered_nodes.iter().enumerate()
+            .take(i)
+            .filter(|(j, &n_idx)| graph.find_edge(node, n_idx).is_some())
+            .collect();
+
+        if higher_neighbors.is_empty() {
+            // this is a maximum
+            lifetimes.push(labeled_point.label);
+        } else {
+            // this is not a maximum so:
+            // it has no lifetime
+            lifetimes.push(0.);
+
+            // now handle whatever merging we need
+            merge_crystals(&node, i, &higher_neighbors, &mut ordered_nodes, &mut lifetimes, graph);
+        }
     }
 }
 
