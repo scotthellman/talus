@@ -1,6 +1,6 @@
 use ndarray::prelude::*;
 use itertools::Itertools;
-use petgraph::graph::Graph;
+use petgraph::graph::{Graph, NodeIndex};
 use petgraph::dot::Dot;
 
 use std::fs::File;
@@ -45,6 +45,13 @@ impl LabeledPoint {
         }
         Ok(points)
     }
+
+    fn grade(&self, other: &LabeledPoint) -> f64{
+        let diff = &self.point - &other.point;
+        let distance = diff.dot(&diff).sqrt();
+        let label_diff = self.label - other.label;
+        label_diff / distance
+    }
 }
 
 fn pairwise_distance(points: &[LabeledPoint]) -> Array2<f64> {
@@ -85,17 +92,27 @@ fn build_knn(points: &[LabeledPoint], k: usize) -> Graph<LabeledPoint, f64, petg
     neighbor_graph
 }
 
-/*
-fn find_local_maximum(node: NodeIndex, graph: Graph<Array1<f64>, f64, petgraph::Undirected>) -> NodeIndex {
-    let this_point = graph.node_weight(node);
-    graph.neighbors(node)
-        .filter(
+fn find_steepest_neighbor(node: NodeIndex,
+                          graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) -> Option<NodeIndex> {
+    let this_point = graph.node_weight(node).unwrap();
+    let result = graph.neighbors(node)
+        .map(|n_idx| (n_idx, graph.node_weight(n_idx).unwrap()))
+        .filter(|(_, n)| n.label > this_point.label)
+        .map(|(n_idx, n)| (n_idx, n, this_point.grade(&n)))
+        .max_by(|a, b| a.2.partial_cmp(&b.2).expect("Nan in the labels"));
+    match result {
+        None => None,
+        Some((idx, _, _)) => Some(idx)
+    }
 }
 
-fn partition_graph_by_steepest_ascent(graph: Graph<Array1<f64>, f64, petgraph::Undirected>) {
-
+fn partition_graph_by_steepest_ascent(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) {
+    //FIXME actually implement this
+    for node in graph.node_indices() {
+        let neighbor = find_steepest_neighbor(node, graph);
+        println!("For {:?}, steepest neighbor was {:?}", node, neighbor);
+    }
 }
-*/
 
 fn main() {
     let points = match LabeledPoint::points_from_file("points.txt") {
@@ -108,4 +125,5 @@ fn main() {
     let graph = build_knn(&points, 2);
     println!("Graph is {:?}", graph);
     println!("{:?}", Dot::with_config(&graph, &[]));
+    partition_graph_by_steepest_ascent(&graph);
 }
