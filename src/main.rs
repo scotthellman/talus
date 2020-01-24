@@ -4,12 +4,13 @@ use petgraph::graph::{Graph, NodeIndex};
 use petgraph::dot::Dot;
 
 use std::fs::File;
+use std::collections::HashSet;
 use std::io;
+use std::f64;
 use std::process;
 use std::error::Error;
 use std::io::{BufRead, BufReader};
 use csv::StringRecord;
-use partitions::partition_vec::PartitionVec;
 
 #[derive(Debug)]
 struct LabeledPoint {
@@ -115,45 +116,81 @@ fn partition_graph_by_steepest_ascent(graph: &Graph<LabeledPoint, f64, petgraph:
     }
 }
 
-fn get_descending_nodes(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) -> PartitionVec<NodeIndex> {
-    let mut nodes: PartitionVec<NodeIndex> = graph.node_indices().collect();
+fn get_descending_nodes(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) -> Vec<MorseNode> {
+    let mut nodes: Vec<NodeIndex> = graph.node_indices().collect();
     nodes.sort_by(|a, b| {
             let a_node = graph.node_weight(*a).expect("Node a wasn't in graph");
             let b_node = graph.node_weight(*b).expect("Node b wasn't in graph");
             b_node.label.partial_cmp(&a_node.label).expect("Nan in the labels")
         });
-    nodes
+    nodes.iter().enumerate().map(|(i, n)| MorseNode{node: *n, maximum:None, maximum_idx: None, node_idx: i}).collect()
 }
 
 // TODO: I'm not convinced PartitionVec is helping me. I need a pointed set and
 // that isn't what it gives me. I need a new struct, something like
 
+#[derive(PartialEq, Eq, Hash, Debug)]
 struct MorseNode {
     node: NodeIndex,
-    maxima: NodeIndex
+    maximum: Option<NodeIndex>,
+    maximum_idx: Option<usize>, //FIXME: i hate this
+    node_idx: usize //FIXME this too
+
 }
 
 // This signature sucks so much
-fn merge_crystals(node: &NodeIndex, list_index: usize, higher_neighbors: &Vec<(usize, &NodeIndex)>,
-                  ordered_nodes: &mut PartitionVec<NodeIndex>,
+fn merge_crystals(list_index: usize, higher_indices: &Vec<usize>, ordered_nodes: &mut Vec<MorseNode>,
                   lifetimes: &mut Vec<f64>, graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) {
     // guard against the no-neighbor case
-    if higher_neighbors.is_empty() {
+    if higher_indices.is_empty() {
         return;
     }
     // simplest case: one neighbor
-    if higher_neighbors.len() == 1 {
-        let neighbor_index = higher_neighbors[0].0;
-        ordered_nodes.union(list_index, neighbor_index);
+    if higher_indices.len() == 1 {
+        let neighbor_index = higher_indices[0];
+        ordered_nodes[list_index].maximum = ordered_nodes[neighbor_index].maximum;
         return;
     }
 
-    // slightly worse: multiple neighbors, but all same set
-    // perhaps what should be done here is: find the maximum for each
-    let neighbors_differ = higher_neighbors.iter().fold( (true, None), |acc, x| {
+    // two cases for multiple neighbors. all the same (no merge), or some different (merge)
+    let all_maxima_indices: HashSet<usize> = higher_indices.iter().map(|i| {
+            let maxima_idx = ordered_nodes[*i].maximum_idx.expect("somehow a node in higher_indices had no maximum");
+            ordered_nodes[maxima_idx].maximum_idx.unwrap()
+        }).collect();
+    if all_maxima_indices.len() == 1 {
+        let maximum_idx = all_maxima_indices.iter().next().unwrap();
+        ordered_nodes[list_index].maximum = Some(ordered_nodes[*maximum_idx].node);
+        ordered_nodes[list_index].maximum_idx = Some(*maximum_idx);
+    } else {
+        // and this is the tough one. We need to identify the highest maxima,
+        // change everything to the maxima, and _propagate that change_
+        let (_, max_idx) = all_maxima_indices.iter().fold((f64::NEG_INFINITY, None), |acc, max_idx| {
+            let node = ordered_nodes[*max_idx].node;
+            let value = graph.node_weight(node).expect("max wasn't in the graph").label;
+            if value > acc.0{
+                (value, Some(max_idx))
+            } else {
+                acc
+            }
+        });
+        let max_idx = *max_idx.expect("Somehow we have no maximum even though there were neighbors");
+        for &local_idx in &all_maxima_indices {
+            if local_idx != max_idx {
+                lifetimes[local_idx] = lifetimes[max_idx] - lifetimes[local_idx];
+            }
+        }
+        // FIXME: This all sucks
+        let max_node = ordered_nodes[max_idx].maximum;
+        for mut node in ordered_nodes {
+            if all_maxima_indices.contains(&node.maximum_idx.unwrap()) {
+                node.maximum = max_node;
+                node.maximum_idx = Some(max_idx);
+            }
+        }
 
-    });
+    }
 }
+// wow that's some bad code
 
 fn compute_persistence(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) {
     let mut ordered_nodes = get_descending_nodes(graph);
@@ -163,23 +200,26 @@ fn compute_persistence(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) {
     // if so, then it is not a maximum. union with its neighbor
     // if there's more than one edge, and they belong to the same maximum, keep going
     // if they unite different maxima, then union the lower one(s) and log the lifetimes
-    for (i, &node) in ordered_nodes.iter().enumerate() {
-        let labeled_point = graph.node_weight(node).expect("Node wasn't in graph");
-        let higher_neighbors: Vec<_> = ordered_nodes.iter().enumerate()
+    for i in 0..ordered_nodes.len() {
+        println!("{:?}", ordered_nodes);
+        let labeled_point = graph.node_weight(ordered_nodes[i].node).expect("Node wasn't in graph");
+        let higher_indices: Vec<_> = ordered_nodes.iter().enumerate()
             .take(i)
-            .filter(|(j, &n_idx)| graph.find_edge(node, n_idx).is_some())
+            .filter(|(_, neighbor)| graph.find_edge(ordered_nodes[i].node, neighbor.node).is_some())
+            .map(|(j, _)| j)
             .collect();
 
-        if higher_neighbors.is_empty() {
+        if higher_indices.is_empty() {
             // this is a maximum
             lifetimes.push(labeled_point.label);
+            ordered_nodes[i].maximum = Some(ordered_nodes[i].node);
         } else {
             // this is not a maximum so:
             // it has no lifetime
             lifetimes.push(0.);
 
             // now handle whatever merging we need
-            merge_crystals(&node, i, &higher_neighbors, &mut ordered_nodes, &mut lifetimes, graph);
+            merge_crystals(i, &higher_indices, &mut ordered_nodes, &mut lifetimes, graph);
         }
     }
 }
@@ -195,5 +235,5 @@ fn main() {
     let graph = build_knn(&points, 2);
     println!("Graph is {:?}", graph);
     println!("{:?}", Dot::with_config(&graph, &[]));
-    partition_graph_by_steepest_ascent(&graph);
+    compute_persistence(&graph);
 }
