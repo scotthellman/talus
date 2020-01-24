@@ -149,13 +149,14 @@ fn merge_crystals(list_index: usize, higher_indices: &Vec<usize>, ordered_nodes:
     if higher_indices.len() == 1 {
         let neighbor_index = higher_indices[0];
         ordered_nodes[list_index].maximum = ordered_nodes[neighbor_index].maximum;
+        ordered_nodes[list_index].maximum_idx = ordered_nodes[neighbor_index].maximum_idx;
         return;
     }
 
     // two cases for multiple neighbors. all the same (no merge), or some different (merge)
+    println!("{:?}", higher_indices);
     let all_maxima_indices: HashSet<usize> = higher_indices.iter().map(|i| {
-            let maxima_idx = ordered_nodes[*i].maximum_idx.expect("somehow a node in higher_indices had no maximum");
-            ordered_nodes[maxima_idx].maximum_idx.unwrap()
+            ordered_nodes[*i].maximum_idx.expect("somehow a node in higher_indices had no maximum")
         }).collect();
     if all_maxima_indices.len() == 1 {
         let maximum_idx = all_maxima_indices.iter().next().unwrap();
@@ -182,9 +183,11 @@ fn merge_crystals(list_index: usize, higher_indices: &Vec<usize>, ordered_nodes:
         // FIXME: This all sucks
         let max_node = ordered_nodes[max_idx].maximum;
         for mut node in ordered_nodes {
-            if all_maxima_indices.contains(&node.maximum_idx.unwrap()) {
-                node.maximum = max_node;
-                node.maximum_idx = Some(max_idx);
+            if let Some(idx) = node.maximum_idx {
+                if all_maxima_indices.contains(&idx) {
+                    node.maximum = max_node;
+                    node.maximum_idx = Some(max_idx);
+                }
             }
         }
 
@@ -213,6 +216,7 @@ fn compute_persistence(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) {
             // this is a maximum
             lifetimes.push(labeled_point.label);
             ordered_nodes[i].maximum = Some(ordered_nodes[i].node);
+            ordered_nodes[i].maximum_idx = Some(i);
         } else {
             // this is not a maximum so:
             // it has no lifetime
