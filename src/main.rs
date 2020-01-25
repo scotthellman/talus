@@ -4,7 +4,7 @@ use petgraph::graph::{Graph, NodeIndex};
 use petgraph::dot::Dot;
 
 use std::fs::File;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::io;
 use std::f64;
 use std::process;
@@ -126,9 +126,6 @@ fn get_descending_nodes(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) 
     nodes.iter().enumerate().map(|(i, n)| MorseNode{node: *n, maximum:None, maximum_idx: None, node_idx: i}).collect()
 }
 
-// TODO: I'm not convinced PartitionVec is helping me. I need a pointed set and
-// that isn't what it gives me. I need a new struct, something like
-
 #[derive(PartialEq, Eq, Hash, Debug)]
 struct MorseNode {
     node: NodeIndex,
@@ -177,7 +174,10 @@ fn merge_crystals(list_index: usize, higher_indices: &Vec<usize>, ordered_nodes:
         let max_idx = *max_idx.expect("Somehow we have no maximum even though there were neighbors");
         for &local_idx in &all_maxima_indices {
             if local_idx != max_idx {
-                lifetimes[local_idx] = lifetimes[max_idx] - lifetimes[local_idx];
+                // This is the critical bit. We subtract the max's value from the 
+                // value of the node that connected the two crystals
+                // FIXME: i really should not be overloading lifetimes like this
+                lifetimes[local_idx] = lifetimes[max_idx] - lifetimes[list_index];
             }
         }
         // FIXME: This all sucks
@@ -195,7 +195,7 @@ fn merge_crystals(list_index: usize, higher_indices: &Vec<usize>, ordered_nodes:
 }
 // wow that's some bad code
 
-fn compute_persistence(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) {
+fn compute_persistence(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) -> HashMap<NodeIndex, f64> {
     let mut ordered_nodes = get_descending_nodes(graph);
     let mut lifetimes = Vec::with_capacity(ordered_nodes.len());
     // for each node, see if it is connected to any other nodes already revealed
@@ -225,7 +225,17 @@ fn compute_persistence(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) {
             // now handle whatever merging we need
             merge_crystals(i, &higher_indices, &mut ordered_nodes, &mut lifetimes, graph);
         }
+        println!("{:?}", lifetimes);
     }
+
+    // By definition, highest max has infinite persistence
+    lifetimes[0] = f64::INFINITY;
+
+    // not really sure what i want the return type to be
+    ordered_nodes.iter()
+        .map(|morse_node| morse_node.node)
+        .zip(lifetimes.into_iter())
+        .collect()
 }
 
 fn main() {
@@ -239,5 +249,77 @@ fn main() {
     let graph = build_knn(&points, 2);
     println!("Graph is {:?}", graph);
     println!("{:?}", Dot::with_config(&graph, &[]));
-    compute_persistence(&graph);
+    let lifetimes = compute_persistence(&graph);
+    println!("Lifetimes were {:?}", lifetimes);
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_single() {
+        let mut graph = Graph::new_undirected();
+        let points = [
+            LabeledPoint{label: -1., point: arr1(&[0., 0.])},
+            LabeledPoint{label: 1., point: arr1(&[1., 0.])},
+        ];
+        let mut node_lookup = Vec::with_capacity(points.len());
+        for point in &points {
+            let node = graph.add_node(point.to_owned());
+            node_lookup.push(node);
+        }
+        graph.add_edge(node_lookup[0], node_lookup[1], 0.);
+        let lifetimes = compute_persistence(&graph);
+        assert_eq!(lifetimes[&node_lookup[0]], 0.);
+        assert_eq!(lifetimes[&node_lookup[1]], f64::INFINITY);
+    }
+
+    #[test]
+    fn test_triangle() {
+        let mut graph = Graph::new_undirected();
+        let points = [
+            LabeledPoint{label: -1., point: arr1(&[0., 0.])},
+            LabeledPoint{label: 0., point: arr1(&[1., 1.])},
+            LabeledPoint{label: 1., point: arr1(&[1., 0.])},
+        ];
+        let mut node_lookup = Vec::with_capacity(points.len());
+        for point in &points {
+            let node = graph.add_node(point.to_owned());
+            node_lookup.push(node);
+        }
+        graph.add_edge(node_lookup[0], node_lookup[1], 0.);
+        graph.add_edge(node_lookup[0], node_lookup[2], 0.);
+        graph.add_edge(node_lookup[1], node_lookup[2], 0.);
+        let lifetimes = compute_persistence(&graph);
+        assert_eq!(lifetimes[&node_lookup[0]], 0.);
+        assert_eq!(lifetimes[&node_lookup[1]], 0.);
+        assert_eq!(lifetimes[&node_lookup[2]], f64::INFINITY);
+    }
+
+    #[test]
+    fn test_square() {
+        let mut graph = Graph::new_undirected();
+        let points = [
+            LabeledPoint{label: 1., point: arr1(&[0., 0.])},
+            LabeledPoint{label: -1., point: arr1(&[1., 0.])},
+            LabeledPoint{label: 0., point: arr1(&[0., 1.])},
+            LabeledPoint{label: 2., point: arr1(&[1., 1.])},
+        ];
+        let mut node_lookup = Vec::with_capacity(points.len());
+        for point in &points {
+            let node = graph.add_node(point.to_owned());
+            node_lookup.push(node);
+        }
+        graph.add_edge(node_lookup[0], node_lookup[1], 0.);
+        graph.add_edge(node_lookup[0], node_lookup[2], 0.);
+        graph.add_edge(node_lookup[1], node_lookup[3], 0.);
+        graph.add_edge(node_lookup[2], node_lookup[3], 0.);
+        let lifetimes = compute_persistence(&graph);
+        assert_eq!(lifetimes[&node_lookup[0]], 2.);
+        assert_eq!(lifetimes[&node_lookup[1]], 0.);
+        assert_eq!(lifetimes[&node_lookup[2]], 0.);
+        assert_eq!(lifetimes[&node_lookup[3]], f64::INFINITY);
+    }
 }
