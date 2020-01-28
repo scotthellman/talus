@@ -1,16 +1,16 @@
 use ndarray::prelude::*;
 use itertools::Itertools;
 use petgraph::graph::{Graph, NodeIndex};
+use petgraph::unionfind::UnionFind;
 use petgraph::dot::Dot;
 
 use std::fs::File;
 use std::collections::{HashSet, HashMap};
-use std::io;
 use std::f64;
-use std::process;
 use std::error::Error;
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use csv::StringRecord;
+use std::hash::{Hash, Hasher};
 
 #[derive(Debug)]
 struct LabeledPoint {
@@ -123,119 +123,157 @@ fn get_descending_nodes(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) 
             let b_node = graph.node_weight(*b).expect("Node b wasn't in graph");
             b_node.label.partial_cmp(&a_node.label).expect("Nan in the labels")
         });
-    nodes.iter().enumerate().map(|(i, n)| MorseNode{node: *n, maximum:None, maximum_idx: None, node_idx: i}).collect()
+    nodes.iter().enumerate().map(|(i, n)| MorseNode{node: *n, lifetime:None}).collect()
 }
 
-#[derive(PartialEq, Eq, Hash, Debug)]
+#[derive(Debug)]
 struct MorseNode {
     node: NodeIndex,
-    maximum: Option<NodeIndex>,
-    maximum_idx: Option<usize>, //FIXME: i hate this
-    node_idx: usize //FIXME this too
-
+    lifetime: Option<f64>,
 }
 
-// This signature sucks so much
-fn merge_crystals(list_index: usize, higher_indices: &Vec<usize>, ordered_nodes: &mut Vec<MorseNode>,
-                  lifetimes: &mut Vec<f64>, graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) {
-    // guard against the no-neighbor case
-    if higher_indices.is_empty() {
-        return;
-    }
-    // simplest case: one neighbor
-    if higher_indices.len() == 1 {
-        let neighbor_index = higher_indices[0];
-        ordered_nodes[list_index].maximum = ordered_nodes[neighbor_index].maximum;
-        ordered_nodes[list_index].maximum_idx = ordered_nodes[neighbor_index].maximum_idx;
-        return;
-    }
-
-    // two cases for multiple neighbors. all the same (no merge), or some different (merge)
-    println!("{:?}", higher_indices);
-    let all_maxima_indices: HashSet<usize> = higher_indices.iter().map(|i| {
-            ordered_nodes[*i].maximum_idx.expect("somehow a node in higher_indices had no maximum")
-        }).collect();
-    if all_maxima_indices.len() == 1 {
-        let maximum_idx = all_maxima_indices.iter().next().unwrap();
-        ordered_nodes[list_index].maximum = Some(ordered_nodes[*maximum_idx].node);
-        ordered_nodes[list_index].maximum_idx = Some(*maximum_idx);
-    } else {
-        // and this is the tough one. We need to identify the highest maxima,
-        // change everything to the maxima, and _propagate that change_
-        let (_, max_idx) = all_maxima_indices.iter().fold((f64::NEG_INFINITY, None), |acc, max_idx| {
-            let node = ordered_nodes[*max_idx].node;
-            let value = graph.node_weight(node).expect("max wasn't in the graph").label;
-            if value > acc.0{
-                (value, Some(max_idx))
-            } else {
-                acc
-            }
-        });
-        let max_idx = *max_idx.expect("Somehow we have no maximum even though there were neighbors");
-        for &local_idx in &all_maxima_indices {
-            if local_idx != max_idx {
-                // This is the critical bit. We subtract the max's value from the 
-                // value of the node that connected the two crystals
-                // FIXME: i really should not be overloading lifetimes like this
-                lifetimes[local_idx] = lifetimes[max_idx] - lifetimes[list_index];
-            }
-        }
-        // FIXME: This all sucks
-        let max_node = ordered_nodes[max_idx].maximum;
-        for mut node in ordered_nodes {
-            if let Some(idx) = node.maximum_idx {
-                if all_maxima_indices.contains(&idx) {
-                    node.maximum = max_node;
-                    node.maximum_idx = Some(max_idx);
-                }
-            }
-        }
-
+impl Hash for MorseNode {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.node.hash(state);
     }
 }
-// wow that's some bad code
 
-fn compute_persistence(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) -> HashMap<NodeIndex, f64> {
-    let mut ordered_nodes = get_descending_nodes(graph);
-    let mut lifetimes = Vec::with_capacity(ordered_nodes.len());
-    // for each node, see if it is connected to any other nodes already revealed
-    // if not, then it is a maximum, i'll need to log that somehow
-    // if so, then it is not a maximum. union with its neighbor
-    // if there's more than one edge, and they belong to the same maximum, keep going
-    // if they unite different maxima, then union the lower one(s) and log the lifetimes
-    for i in 0..ordered_nodes.len() {
-        println!("{:?}", ordered_nodes);
-        let labeled_point = graph.node_weight(ordered_nodes[i].node).expect("Node wasn't in graph");
-        let higher_indices: Vec<_> = ordered_nodes.iter().enumerate()
-            .take(i)
-            .filter(|(_, neighbor)| graph.find_edge(ordered_nodes[i].node, neighbor.node).is_some())
-            .map(|(j, _)| j)
+impl PartialEq for MorseNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.node == other.node
+    }
+}
+
+impl Eq for MorseNode {}
+
+struct PointedUnionFind {
+    unionfind: UnionFind<usize>,
+    reprs: Vec<usize>
+}
+
+impl PointedUnionFind {
+    // this is insanely specific and will break if you use it outside of exactly
+    // how it works in the morse complex code (and maybe even if you use it
+    // exactly that way!)
+    // This turns UnionFind into a structure that always keeps the repr 
+    // for the left hand size of a union constant. But to do this efficiently
+    // i can't do things like "ensure consistency" outside of the access patterns
+    // i know the morse complex code will follow
+    // (specifically, this data structure offers no guarantees that
+    // `find(find(x)) will be reasonable)
+    fn new(n: usize) -> Self {
+        let unionfind = UnionFind::new(n);
+        let reprs = (0..n).collect();
+        PointedUnionFind{unionfind, reprs}
+    }
+
+    fn find(&self, x: usize) -> usize {
+        let inner_repr = self.unionfind.find(x);
+        self.reprs[inner_repr]
+    }
+
+    fn union(&mut self, x: usize, y: usize) {
+        // x is privileged!
+        let old_outer = self.find(x);
+        self.unionfind.union(x, y);
+        let new_inner = self.unionfind.find(x);
+        self.reprs[new_inner] = old_outer;
+    }
+}
+
+struct MorseComplex<'a> {
+    crystals: PointedUnionFind,
+    ordered_points: Vec<MorseNode>,
+    graph: &'a mut Graph<LabeledPoint, f64, petgraph::Undirected>
+}
+
+impl<'a> MorseComplex<'a> {
+    fn from_graph(graph: &'a mut Graph<LabeledPoint, f64, petgraph::Undirected>) -> MorseComplex<'a> {
+        let ordered_points = get_descending_nodes(graph);
+        let num_points = ordered_points.len();
+        let crystals = PointedUnionFind::new(num_points);
+
+        MorseComplex{crystals, ordered_points, graph}
+    }
+
+    fn compute_persistence(&mut self) -> HashMap<NodeIndex, f64> {
+        for i in 0..self.ordered_points.len() {
+            let higher_indices: Vec<_> = self.ordered_points.iter().enumerate()
+                .take(i)
+                .filter(|(_, neighbor)| self.graph.find_edge(self.ordered_points[i].node, neighbor.node).is_some())
+                .map(|(j, _)| j)
+                .collect();
+
+            if !higher_indices.is_empty() {
+                // this is not a maximum so:
+                // it has no lifetime
+                self.ordered_points[i].lifetime = Some(0.);
+
+                // now handle whatever merging we need
+                self.merge_crystals(i, &higher_indices);
+            }
+        }
+
+        // By definition, highest max has infinite persistence
+        self.ordered_points[0].lifetime = Some(f64::INFINITY);
+
+        self.ordered_points.iter()
+            .map(|morse_node| (morse_node.node, morse_node.lifetime.expect("no lifetime?")))
+            .collect()
+    }
+
+    fn merge_crystals(&mut self, ordered_index: usize, ascending_neighbors: &[usize]) {
+
+        // guard against no neighbors
+        if ascending_neighbors.is_empty() {
+            return;
+        }
+
+        // one neighbor is easy
+        if ascending_neighbors.len() == 1 {
+            let neighbor_index = ascending_neighbors[0];
+            self.crystals.union(neighbor_index, ordered_index);
+            return;
+        }
+
+        // figure out if all neighbors are in the same crystal
+        let connected_crystals: HashSet<_> = ascending_neighbors.iter()
+            .map(|&idx| self.crystals.find(idx))
             .collect();
 
-        if higher_indices.is_empty() {
-            // this is a maximum
-            lifetimes.push(labeled_point.label);
-            ordered_nodes[i].maximum = Some(ordered_nodes[i].node);
-            ordered_nodes[i].maximum_idx = Some(i);
-        } else {
-            // this is not a maximum so:
-            // it has no lifetime
-            lifetimes.push(0.);
-
-            // now handle whatever merging we need
-            merge_crystals(i, &higher_indices, &mut ordered_nodes, &mut lifetimes, graph);
+        if connected_crystals.len() == 1 {
+            let neighbor_index = ascending_neighbors[0];
+            self.crystals.union(neighbor_index, ordered_index);
+            return;
         }
-        println!("{:?}", lifetimes);
+
+        // ok, if we're here then we're merging crystals
+        // first figure out what the global max is
+        let (_, max_crystal) = connected_crystals.iter()
+            .map(|&idx| {
+                let node = &self.ordered_points[idx];
+                let value = self.graph.node_weight(node.node).expect("max wasn't in the graph").label;
+                (value, idx)
+            })
+            .max_by(|a, b| a.0.partial_cmp(&b.0).expect("Nan in the labels"))
+            .expect("No maximum was found, somehow?");
+
+        // now we need to update the lifetimes and merge the other crystals
+        let joining_node = &self.ordered_points[ordered_index];
+        let joining_label = self.graph.node_weight(joining_node.node).expect("joining node wasn't in the graph").label;
+        self.crystals.union(max_crystal, ordered_index);
+        for crystal in connected_crystals {
+            if crystal != max_crystal {
+                //update lifetime
+                let crystal_node = &self.ordered_points[crystal];
+                let crystal_label = self.graph.node_weight(crystal_node.node).expect("crystal node wasn't in the graph").label;
+                self.ordered_points[crystal].lifetime = Some(crystal_label - joining_label);
+
+                //union
+                self.crystals.union(max_crystal, crystal);
+            }
+        }
     }
-
-    // By definition, highest max has infinite persistence
-    lifetimes[0] = f64::INFINITY;
-
-    // not really sure what i want the return type to be
-    ordered_nodes.iter()
-        .map(|morse_node| morse_node.node)
-        .zip(lifetimes.into_iter())
-        .collect()
 }
 
 fn main() {
@@ -246,10 +284,11 @@ fn main() {
             panic!();
         }
     };
-    let graph = build_knn(&points, 2);
+    let mut graph = build_knn(&points, 2);
     println!("Graph is {:?}", graph);
     println!("{:?}", Dot::with_config(&graph, &[]));
-    let lifetimes = compute_persistence(&graph);
+    let mut complex = MorseComplex::from_graph(&mut graph);
+    let lifetimes = complex.compute_persistence();
     println!("Lifetimes were {:?}", lifetimes);
 }
 
@@ -271,7 +310,8 @@ mod tests {
             node_lookup.push(node);
         }
         graph.add_edge(node_lookup[0], node_lookup[1], 0.);
-        let lifetimes = compute_persistence(&graph);
+        let mut complex = MorseComplex::from_graph(&mut graph);
+        let lifetimes = complex.compute_persistence();
         assert_eq!(lifetimes[&node_lookup[0]], 0.);
         assert_eq!(lifetimes[&node_lookup[1]], f64::INFINITY);
     }
@@ -292,7 +332,8 @@ mod tests {
         graph.add_edge(node_lookup[0], node_lookup[1], 0.);
         graph.add_edge(node_lookup[0], node_lookup[2], 0.);
         graph.add_edge(node_lookup[1], node_lookup[2], 0.);
-        let lifetimes = compute_persistence(&graph);
+        let mut complex = MorseComplex::from_graph(&mut graph);
+        let lifetimes = complex.compute_persistence();
         assert_eq!(lifetimes[&node_lookup[0]], 0.);
         assert_eq!(lifetimes[&node_lookup[1]], 0.);
         assert_eq!(lifetimes[&node_lookup[2]], f64::INFINITY);
@@ -316,10 +357,55 @@ mod tests {
         graph.add_edge(node_lookup[0], node_lookup[2], 0.);
         graph.add_edge(node_lookup[1], node_lookup[3], 0.);
         graph.add_edge(node_lookup[2], node_lookup[3], 0.);
-        let lifetimes = compute_persistence(&graph);
-        assert_eq!(lifetimes[&node_lookup[0]], 2.);
+        let mut complex = MorseComplex::from_graph(&mut graph);
+        let lifetimes = complex.compute_persistence();
+        assert_eq!(lifetimes[&node_lookup[0]], 1.);
         assert_eq!(lifetimes[&node_lookup[1]], 0.);
         assert_eq!(lifetimes[&node_lookup[2]], 0.);
         assert_eq!(lifetimes[&node_lookup[3]], f64::INFINITY);
+    }
+
+    #[test]
+    fn test_big_square() {
+        let mut graph = Graph::new_undirected();
+        let points = [
+            LabeledPoint{label: 6., point: arr1(&[0., 0.])},
+            LabeledPoint{label: 2., point: arr1(&[1., 0.])},
+            LabeledPoint{label: 3., point: arr1(&[2., 0.])},
+            LabeledPoint{label: 5., point: arr1(&[0., 1.])},
+            LabeledPoint{label: 4., point: arr1(&[1., 1.])},
+            LabeledPoint{label: -5., point: arr1(&[1., 2.])},
+            LabeledPoint{label: 0., point: arr1(&[0., 2.])},
+            LabeledPoint{label: 1., point: arr1(&[1., 2.])},
+            LabeledPoint{label: 10., point: arr1(&[2., 2.])},
+        ];
+        let mut node_lookup = Vec::with_capacity(points.len());
+        for point in &points {
+            let node = graph.add_node(point.to_owned());
+            node_lookup.push(node);
+        }
+        graph.add_edge(node_lookup[0], node_lookup[1], 0.);
+        graph.add_edge(node_lookup[1], node_lookup[2], 0.);
+        graph.add_edge(node_lookup[0], node_lookup[3], 0.);
+        graph.add_edge(node_lookup[1], node_lookup[4], 0.);
+        graph.add_edge(node_lookup[2], node_lookup[5], 0.);
+        graph.add_edge(node_lookup[3], node_lookup[4], 0.);
+        graph.add_edge(node_lookup[4], node_lookup[5], 0.);
+        graph.add_edge(node_lookup[3], node_lookup[6], 0.);
+        graph.add_edge(node_lookup[4], node_lookup[7], 0.);
+        graph.add_edge(node_lookup[5], node_lookup[8], 0.);
+        graph.add_edge(node_lookup[6], node_lookup[7], 0.);
+        graph.add_edge(node_lookup[7], node_lookup[8], 0.);
+        let mut complex = MorseComplex::from_graph(&mut graph);
+        let lifetimes = complex.compute_persistence();
+        assert_eq!(lifetimes[&node_lookup[0]], 5.);
+        assert_eq!(lifetimes[&node_lookup[1]], 0.);
+        assert_eq!(lifetimes[&node_lookup[2]], 1.);
+        assert_eq!(lifetimes[&node_lookup[3]], 0.);
+        assert_eq!(lifetimes[&node_lookup[4]], 0.);
+        assert_eq!(lifetimes[&node_lookup[5]], 0.);
+        assert_eq!(lifetimes[&node_lookup[6]], 0.);
+        assert_eq!(lifetimes[&node_lookup[7]], 0.);
+        assert_eq!(lifetimes[&node_lookup[8]], f64::INFINITY);
     }
 }
