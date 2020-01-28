@@ -88,19 +88,23 @@ impl<'a> MorseComplex<'a> {
     }
 
     pub fn compute_persistence(&mut self) -> HashMap<NodeIndex, f64> {
+        // We iterate through the points in descending order, which means we are
+        // essentially building the morse complex at the same time that we compute
+        // persistence.
         for i in 0..self.ordered_points.len() {
+            // find all *already processed* points that we have an edge to
             let higher_indices: Vec<_> = self.ordered_points.iter().enumerate()
                 .take(i)
                 .filter(|(_, neighbor)| self.graph.find_edge(self.ordered_points[i].node, neighbor.node).is_some())
                 .map(|(j, _)| j)
                 .collect();
 
+            // Nothing to do if we have no neighbors, but if we do then we
+            // have to merge the correspond morse crystals
             if !higher_indices.is_empty() {
-                // this is not a maximum so:
-                // it has no lifetime
+                // this is not a maximum so it has no lifetime
                 self.ordered_points[i].lifetime = Some(0.);
 
-                // now handle whatever merging we need
                 self.merge_crystals(i, &higher_indices);
             }
         }
@@ -114,31 +118,31 @@ impl<'a> MorseComplex<'a> {
     }
 
     fn merge_crystals(&mut self, ordered_index: usize, ascending_neighbors: &[usize]) {
-
-        // guard against no neighbors
+        // If there are no neighbors, there's nothing to merge
         if ascending_neighbors.is_empty() {
             return;
         }
 
-        // one neighbor is easy
+        // one neighbor is easy, just union this point in to that neighbor's crystal
         if ascending_neighbors.len() == 1 {
             let neighbor_index = ascending_neighbors[0];
             self.crystals.union(neighbor_index, ordered_index);
             return;
         }
 
-        // figure out if all neighbors are in the same crystal
+        // for multiple neighbors, first figure out if all neighbors are in the same crystal
         let connected_crystals: HashSet<_> = ascending_neighbors.iter()
             .map(|&idx| self.crystals.find(idx))
             .collect();
 
+        // If they are all in the same crystal, it's the same as if there was just one neighbor
         if connected_crystals.len() == 1 {
             let neighbor_index = ascending_neighbors[0];
             self.crystals.union(neighbor_index, ordered_index);
             return;
         }
 
-        // ok, if we're here then we're merging crystals
+        // And if we're here then we're merging crystals
         // first figure out what the global max is
         let (_, max_crystal) = connected_crystals.iter()
             .map(|&idx| {
@@ -155,12 +159,9 @@ impl<'a> MorseComplex<'a> {
         self.crystals.union(max_crystal, ordered_index);
         for crystal in connected_crystals {
             if crystal != max_crystal {
-                //update lifetime
                 let crystal_node = &self.ordered_points[crystal];
                 let crystal_label = self.graph.node_weight(crystal_node.node).expect("crystal node wasn't in the graph").label;
                 self.ordered_points[crystal].lifetime = Some(crystal_label - joining_label);
-
-                //union
                 self.crystals.union(max_crystal, crystal);
             }
         }
