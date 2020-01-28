@@ -4,7 +4,9 @@ use petgraph::dot::Dot;
 
 use std::f64;
 
+use topology;
 use topology::LabeledPoint;
+
 
 fn main() {
     let points = match LabeledPoint::points_from_file("points.txt") {
