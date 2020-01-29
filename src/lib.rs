@@ -1,38 +1,54 @@
-#![crate_type = "cdylib"]
 use ndarray::prelude::*;
 
 use std::fs::File;
 use std::f64;
 use std::error::Error;
+use std::collections::HashMap;
 use std::io::BufReader;
 use csv::StringRecord;
+use petgraph::graph::{Graph, NodeIndex};
 
 pub mod morse;
 pub mod graph;
 #[macro_use] extern crate cpython;
-use cpython::{PyResult, Python};
+use cpython::{PyResult, Python, PyList, PyTuple, PyObject, PyFloat, PyInt};
 
 
 // add bindings to the generated python module
 // N.B: names: "rust2py" must be the name of the `.so` or `.pyd` file
 py_module_initializer!(topology, inittopology, PyInit_topology, |py, m| {
     m.add(py, "__doc__", "This module is implemented in Rust.")?;
-    m.add(py, "sum_as_string", py_fn!(py, sum_as_string_py(a: i64, b:i64)))?;
+    m.add(py, "persistence", py_fn!(py, persistence_py(nodes: PyList, edges: PyList)))?;
     Ok(())
 });
-
-// logic implemented as a normal rust function
-fn sum_as_string(a:i64, b:i64) -> String {
-    format!("{}", a + b).to_string()
-}
 
 // rust-cpython aware function. All of our python interface could be
 // declared in a separate module.
 // Note that the py_fn!() macro automatically converts the arguments from
 // Python objects to Rust values; and the Rust return value back into a Python object.
-fn sum_as_string_py(_: Python, a:i64, b:i64) -> PyResult<String> {
-    let out = sum_as_string(a, b);
-    Ok(out)
+fn persistence_py(py: Python, nodes: PyList, edges: PyList) -> PyResult<String> {
+    let mut labeled_nodes: Vec<NodeIndex> = Vec::with_capacity(nodes.len(py));
+    let mut id_lookup: HashMap<i64, (usize, NodeIndex)> = HashMap::with_capacity(nodes.len(py));
+    let mut g = Graph::new_undirected();
+    for (i, node) in nodes.iter(py).enumerate() {
+        // FIXME: so this really shows how bad LabeledPoint is, no way to store the id
+        let node_tuple: PyTuple = node.extract(py)?;
+        let id: i64 = node_tuple.get_item(py, 0).extract(py)?;
+        let label: f64 = node_tuple.get_item(py, 1).extract(py)?;
+        let point = LabeledPoint{point:arr1(&[]), label};
+        let node = g.add_node(point.to_owned());
+        labeled_nodes.push(node);
+        id_lookup.insert(id, (i, node));
+    }
+    for edge in edges.iter(py) {
+        let node_tuple: PyTuple = edge.extract(py)?;
+        let left: i64 = node_tuple.get_item(py, 0).extract(py)?;
+        let right: i64 = node_tuple.get_item(py, 1).extract(py)?;
+        g.add_edge((id_lookup.get(&left).unwrap()).1, id_lookup.get(&right).unwrap().1, 0.);
+    }
+    let mut complex = morse::MorseComplex::from_graph(&mut g);
+    let lifetimes = complex.compute_persistence();
+    Ok(format!("{:?}", lifetimes))
 }
 
 #[derive(Debug)]
