@@ -1,11 +1,29 @@
 use talus;
+use std::f64;
+use std::collections::HashMap;
 
 #[test]
 fn continental_divide_test() {
     let points = talus::LabeledPoint::points_from_file("grays.txt").ok().unwrap();
+    // I know that Grays, Torreys, and Grizzly are the first 3 points
+    let mut expected = HashMap::with_capacity(3);
+    expected.insert(0, f64::INFINITY);
+    expected.insert(1, 560.);
+    expected.insert(2, 827.);
     let mut graph = talus::graph::build_knn(&points, 5);
     let mut complex = talus::morse::MorseComplex::from_graph(&mut graph);
     let lifetimes = complex.compute_persistence();
-    println!("{:?}", lifetimes);
-    panic!();
+    lifetimes.iter()
+        .map(|(node, lifetime)| (graph.node_weight(*node).unwrap().id, lifetime))
+        .filter(|(id, _)| expected.contains_key(id))
+        .for_each(|(id, lifetime)| {
+            let expected_lifetime = expected.get(&id).unwrap();
+            println!("{}, {}, {}", id, lifetime, expected_lifetime);
+            if lifetime.is_infinite() {
+                assert!(expected_lifetime.is_infinite());
+            } else {
+                // big error bars on this, due to the manual sampling of the points in grays.txt
+                assert!((lifetime - expected_lifetime).abs() < 150.);
+            }
+        });
 }
