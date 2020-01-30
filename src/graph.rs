@@ -1,5 +1,4 @@
 use ndarray::prelude::*;
-use std::hash::Hash;
 use itertools::Itertools;
 use petgraph::graph::{Graph, NodeIndex};
 use std::f64;
