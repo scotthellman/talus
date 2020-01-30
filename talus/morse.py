@@ -1,12 +1,14 @@
 # code for calling persistence on a networkx graph
 from . import talus
 from dataclasses import dataclass, field
+from typing import List
 
 
 @dataclass
 class MorseNode:
     identifier: int
     value: field
+    vector: List[float] = field(default_factory=list)
 
     def __eq__(self, other):
         return self.identifier == other.identifier
@@ -16,6 +18,10 @@ class MorseNode:
 
 
 def persistence(graph):
-    nodes = [(n.identifier, n.value) for n in graph]
+    nodes = [n for n in graph]
     edges = [(e[0].identifier, e[1].identifier) for e in graph.edges]
     return talus._persistence(nodes, edges)
+
+
+def persistence_by_knn(points, k):
+    return talus._persistence_by_knn(points, k)

@@ -4,46 +4,53 @@ use std::fs::File;
 use std::f64;
 use std::error::Error;
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::path::Path;
 use std::io::BufReader;
 use csv::StringRecord;
 use petgraph::graph::{Graph, NodeIndex};
 
+
 pub mod morse;
 pub mod graph;
 
 #[macro_use] extern crate cpython;
-use cpython::{PyResult, Python, PyList, PyTuple, PyObject, PyFloat, PyInt, PyDict, ToPyObject};
+use cpython::{PyResult, Python, PyList, PyTuple, PyDict, PyObject, ToPyObject, FromPyObject};
+use crate::cpython::ObjectProtocol;
 
 
-// add bindings to the generated python module
-// N.B: names: "rust2py" must be the name of the `.so` or `.pyd` file
 py_module_initializer!(talus, inittalus, PyInit_talus, |py, m| {
     m.add(py, "__doc__", "This module is implemented in Rust.")?;
     m.add(py, "_persistence", py_fn!(py, persistence_py(nodes: PyList, edges: PyList)))?;
+    m.add(py, "_persistence_by_knn", py_fn!(py, knn_persistence_py(points: PyList, k: usize)))?;
     Ok(())
 });
 
-// rust-cpython aware function. All of our python interface could be
-// declared in a separate module.
-// Note that the py_fn!() macro automatically converts the arguments from
-// Python objects to Rust values; and the Rust return value back into a Python object.
+fn knn_persistence_py(py: Python, points: PyList, k: usize) -> PyResult<PyDict> {
+    let mut labeled_points = Vec::with_capacity(points.len(py));
+    for point in points.iter(py) {
+        labeled_points.push(point.extract(py)?);
+    }
+    let mut g = graph::build_knn(&labeled_points, k);
+    let mut complex = morse::MorseComplex::from_graph(&mut g);
+    let lifetimes = complex.compute_persistence();
+    let lifetimes: HashMap<i64, f64> = lifetimes.iter()
+        .map(|(k,v)| {
+            let id = g.node_weight(*k).unwrap().id;
+            (id, *v)
+        })
+        .collect();
+    Ok(lifetimes.to_py_object(py))
+}
+
 fn persistence_py(py: Python, nodes: PyList, edges: PyList) -> PyResult<PyDict> {
     let mut labeled_nodes: Vec<NodeIndex> = Vec::with_capacity(nodes.len(py));
     let mut id_lookup: HashMap<i64, (usize, NodeIndex)> = HashMap::with_capacity(nodes.len(py));
-    let mut inverse_id_lookup: HashMap<NodeIndex, i64> = HashMap::with_capacity(nodes.len(py));
     let mut g = Graph::new_undirected();
     for (i, node) in nodes.iter(py).enumerate() {
-        // FIXME: so this really shows how bad LabeledPoint is, no way to store the id
-        let node_tuple: PyTuple = node.extract(py)?;
-        let id: i64 = node_tuple.get_item(py, 0).extract(py)?;
-        let value: f64 = node_tuple.get_item(py, 1).extract(py)?;
-        let point = LabeledPoint{point:arr1(&[]), value, id};
+        let point: LabeledPoint = node.extract(py)?;
         let node = g.add_node(point.to_owned());
         labeled_nodes.push(node);
-        id_lookup.insert(id, (i, node));
-        inverse_id_lookup.insert(node, id);
+        id_lookup.insert(point.id, (i, node));
     }
     for edge in edges.iter(py) {
         let node_tuple: PyTuple = edge.extract(py)?;
@@ -54,7 +61,10 @@ fn persistence_py(py: Python, nodes: PyList, edges: PyList) -> PyResult<PyDict> 
     let mut complex = morse::MorseComplex::from_graph(&mut g);
     let lifetimes = complex.compute_persistence();
     let lifetimes: HashMap<i64, f64> = lifetimes.iter()
-        .map(|(k,v)| (*inverse_id_lookup.get(k).unwrap(), *v))
+        .map(|(k,v)| {
+            let id = g.node_weight(*k).unwrap().id;
+            (id, *v)
+        })
         .collect();
     Ok(lifetimes.to_py_object(py))
 }
@@ -64,6 +74,21 @@ pub struct LabeledPoint {
     pub id: i64,
     pub point: Array1<f64>,
     pub value: f64
+}
+
+impl<'s> FromPyObject<'s> for LabeledPoint {
+    fn extract(py: Python, obj: &'s PyObject) -> PyResult<Self>{
+        let id: i64 = obj.getattr(py, "identifier")?.extract(py)?;
+        let value: f64 = obj.getattr(py, "value")?.extract(py)?;
+        let list: PyList = obj.getattr(py, "vector")?.extract(py)?;
+        let mut point: Array1<f64> = Array1::zeros(list.len(py));
+        for (i, value) in list.iter(py).enumerate() {
+            let v = value.extract(py)?;
+            point[i] = v;
+        };
+        Ok(LabeledPoint{id, value, point})
+    }
+
 }
 
 impl LabeledPoint {
