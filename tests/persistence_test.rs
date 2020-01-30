@@ -1,10 +1,15 @@
 use talus;
 use std::f64;
+use std::path::PathBuf;
 use std::collections::HashMap;
 
 #[test]
 fn continental_divide_test() {
-    let points = talus::LabeledPoint::points_from_file("grays.txt").ok().unwrap();
+    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    d.push("tests");
+    d.push("resources");
+    d.push("grays.txt");
+    let points = talus::LabeledPoint::points_from_file(d).ok().unwrap();
     // I know that Grays, Torreys, and Grizzly are the first 3 points
     let mut expected = HashMap::with_capacity(3);
     expected.insert(0, f64::INFINITY);

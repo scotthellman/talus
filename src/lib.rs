@@ -5,6 +5,7 @@ use std::f64;
 use std::error::Error;
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::path::Path;
 use std::io::BufReader;
 use csv::StringRecord;
 use petgraph::graph::{Graph, NodeIndex};
@@ -81,7 +82,7 @@ impl LabeledPoint {
         LabeledPoint{value: self.value, point: self.point.to_owned(), id: self.id}
     }
 
-    pub fn points_from_file(filename: &str) -> Result<Vec<LabeledPoint>, Box<dyn Error>> {
+    pub fn points_from_file<P: AsRef<Path>>(filename: P) -> Result<Vec<LabeledPoint>, Box<dyn Error>> {
         let f = File::open(filename).expect("Unable to open file");
         let f = BufReader::new(f);
         let mut points = Vec::with_capacity(16);
