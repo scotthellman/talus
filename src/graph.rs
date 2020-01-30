@@ -1,4 +1,5 @@
 use ndarray::prelude::*;
+use std::hash::Hash;
 use itertools::Itertools;
 use petgraph::graph::{Graph, NodeIndex};
 use std::f64;
@@ -48,9 +49,9 @@ fn find_steepest_neighbor(node: NodeIndex,
     let this_point = graph.node_weight(node).unwrap();
     let result = graph.neighbors(node)
         .map(|n_idx| (n_idx, graph.node_weight(n_idx).unwrap()))
-        .filter(|(_, n)| n.label > this_point.label)
+        .filter(|(_, n)| n.value > this_point.value)
         .map(|(n_idx, n)| (n_idx, n, this_point.grade(&n)))
-        .max_by(|a, b| a.2.partial_cmp(&b.2).expect("Nan in the labels"));
+        .max_by(|a, b| a.2.partial_cmp(&b.2).expect("Nan in the values"));
     match result {
         None => None,
         Some((idx, _, _)) => Some(idx)

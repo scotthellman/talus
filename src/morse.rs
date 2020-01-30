@@ -82,7 +82,7 @@ impl<'a> MorseComplex<'a> {
         nodes.sort_by(|a, b| {
                 let a_node = graph.node_weight(*a).expect("Node a wasn't in graph");
                 let b_node = graph.node_weight(*b).expect("Node b wasn't in graph");
-                b_node.label.partial_cmp(&a_node.label).expect("Nan in the labels")
+                b_node.value.partial_cmp(&a_node.value).expect("Nan in the values")
             });
         nodes.iter().enumerate().map(|(_, n)| MorseNode{node: *n, lifetime:None}).collect()
     }
@@ -147,23 +147,141 @@ impl<'a> MorseComplex<'a> {
         let (_, max_crystal) = connected_crystals.iter()
             .map(|&idx| {
                 let node = &self.ordered_points[idx];
-                let value = self.graph.node_weight(node.node).expect("max wasn't in the graph").label;
+                let value = self.graph.node_weight(node.node).expect("max wasn't in the graph").value;
                 (value, idx)
             })
-            .max_by(|a, b| a.0.partial_cmp(&b.0).expect("Nan in the labels"))
+            .max_by(|a, b| a.0.partial_cmp(&b.0).expect("Nan in the values"))
             .expect("No maximum was found, somehow?");
 
         // now we need to update the lifetimes and merge the other crystals
         let joining_node = &self.ordered_points[ordered_index];
-        let joining_label = self.graph.node_weight(joining_node.node).expect("joining node wasn't in the graph").label;
+        let joining_value = self.graph.node_weight(joining_node.node).expect("joining node wasn't in the graph").value;
         self.crystals.union(max_crystal, ordered_index);
         for crystal in connected_crystals {
             if crystal != max_crystal {
                 let crystal_node = &self.ordered_points[crystal];
-                let crystal_label = self.graph.node_weight(crystal_node.node).expect("crystal node wasn't in the graph").label;
-                self.ordered_points[crystal].lifetime = Some(crystal_label - joining_label);
+                let crystal_value = self.graph.node_weight(crystal_node.node).expect("crystal node wasn't in the graph").value;
+                self.ordered_points[crystal].lifetime = Some(crystal_value - joining_value);
                 self.crystals.union(max_crystal, crystal);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ndarray::prelude::*;
+
+    #[test]
+    fn test_single() {
+        let mut graph = Graph::new_undirected();
+        let points = [
+            LabeledPoint{id: 0, value: -1., point: arr1(&[0., 0.])},
+            LabeledPoint{id: 1, value: 1., point: arr1(&[1., 0.])},
+        ];
+        let mut node_lookup = Vec::with_capacity(points.len());
+        for point in &points {
+            let node = graph.add_node(point.to_owned());
+            node_lookup.push(node);
+        }
+        graph.add_edge(node_lookup[0], node_lookup[1], 0.);
+        let mut complex = MorseComplex::from_graph(&mut graph);
+        let lifetimes = complex.compute_persistence();
+        assert_eq!(lifetimes[&node_lookup[0]], 0.);
+        assert_eq!(lifetimes[&node_lookup[1]], f64::INFINITY);
+    }
+
+    #[test]
+    fn test_triangle() {
+        let mut graph = Graph::new_undirected();
+        let points = [
+            LabeledPoint{id: 0, value: -1., point: arr1(&[0., 0.])},
+            LabeledPoint{id: 1, value: 0., point: arr1(&[1., 1.])},
+            LabeledPoint{id: 2, value: 1., point: arr1(&[1., 0.])},
+        ];
+        let mut node_lookup = Vec::with_capacity(points.len());
+        for point in &points {
+            let node = graph.add_node(point.to_owned());
+            node_lookup.push(node);
+        }
+        graph.add_edge(node_lookup[0], node_lookup[1], 0.);
+        graph.add_edge(node_lookup[0], node_lookup[2], 0.);
+        graph.add_edge(node_lookup[1], node_lookup[2], 0.);
+        let mut complex = MorseComplex::from_graph(&mut graph);
+        let lifetimes = complex.compute_persistence();
+        assert_eq!(lifetimes[&node_lookup[0]], 0.);
+        assert_eq!(lifetimes[&node_lookup[1]], 0.);
+        assert_eq!(lifetimes[&node_lookup[2]], f64::INFINITY);
+    }
+
+    #[test]
+    fn test_square() {
+        let mut graph = Graph::new_undirected();
+        let points = [
+            LabeledPoint{id: 0, value: 1., point: arr1(&[0., 0.])},
+            LabeledPoint{id: 1, value: -1., point: arr1(&[1., 0.])},
+            LabeledPoint{id: 2, value: 0., point: arr1(&[0., 1.])},
+            LabeledPoint{id: 3, value: 2., point: arr1(&[1., 1.])},
+        ];
+        let mut node_lookup = Vec::with_capacity(points.len());
+        for point in &points {
+            let node = graph.add_node(point.to_owned());
+            node_lookup.push(node);
+        }
+        graph.add_edge(node_lookup[0], node_lookup[1], 0.);
+        graph.add_edge(node_lookup[0], node_lookup[2], 0.);
+        graph.add_edge(node_lookup[1], node_lookup[3], 0.);
+        graph.add_edge(node_lookup[2], node_lookup[3], 0.);
+        let mut complex = MorseComplex::from_graph(&mut graph);
+        let lifetimes = complex.compute_persistence();
+        assert_eq!(lifetimes[&node_lookup[0]], 1.);
+        assert_eq!(lifetimes[&node_lookup[1]], 0.);
+        assert_eq!(lifetimes[&node_lookup[2]], 0.);
+        assert_eq!(lifetimes[&node_lookup[3]], f64::INFINITY);
+    }
+
+    #[test]
+    fn test_big_square() {
+        let mut graph = Graph::new_undirected();
+        let points = [
+            LabeledPoint{id: 0, value: 6., point: arr1(&[0., 0.])},
+            LabeledPoint{id: 1, value: 2., point: arr1(&[1., 0.])},
+            LabeledPoint{id: 2, value: 3., point: arr1(&[2., 0.])},
+            LabeledPoint{id: 3, value: 5., point: arr1(&[0., 1.])},
+            LabeledPoint{id: 4, value: 4., point: arr1(&[1., 1.])},
+            LabeledPoint{id: 5, value: -5., point: arr1(&[1., 2.])},
+            LabeledPoint{id: 6, value: 0., point: arr1(&[0., 2.])},
+            LabeledPoint{id: 7, value: 1., point: arr1(&[1., 2.])},
+            LabeledPoint{id: 8, value: 10., point: arr1(&[2., 2.])},
+        ];
+        let mut node_lookup = Vec::with_capacity(points.len());
+        for point in &points {
+            let node = graph.add_node(point.to_owned());
+            node_lookup.push(node);
+        }
+        graph.add_edge(node_lookup[0], node_lookup[1], 0.);
+        graph.add_edge(node_lookup[1], node_lookup[2], 0.);
+        graph.add_edge(node_lookup[0], node_lookup[3], 0.);
+        graph.add_edge(node_lookup[1], node_lookup[4], 0.);
+        graph.add_edge(node_lookup[2], node_lookup[5], 0.);
+        graph.add_edge(node_lookup[3], node_lookup[4], 0.);
+        graph.add_edge(node_lookup[4], node_lookup[5], 0.);
+        graph.add_edge(node_lookup[3], node_lookup[6], 0.);
+        graph.add_edge(node_lookup[4], node_lookup[7], 0.);
+        graph.add_edge(node_lookup[5], node_lookup[8], 0.);
+        graph.add_edge(node_lookup[6], node_lookup[7], 0.);
+        graph.add_edge(node_lookup[7], node_lookup[8], 0.);
+        let mut complex = MorseComplex::from_graph(&mut graph);
+        let lifetimes = complex.compute_persistence();
+        assert_eq!(lifetimes[&node_lookup[0]], 5.);
+        assert_eq!(lifetimes[&node_lookup[1]], 0.);
+        assert_eq!(lifetimes[&node_lookup[2]], 1.);
+        assert_eq!(lifetimes[&node_lookup[3]], 0.);
+        assert_eq!(lifetimes[&node_lookup[4]], 0.);
+        assert_eq!(lifetimes[&node_lookup[5]], 0.);
+        assert_eq!(lifetimes[&node_lookup[6]], 0.);
+        assert_eq!(lifetimes[&node_lookup[7]], 0.);
+        assert_eq!(lifetimes[&node_lookup[8]], f64::INFINITY);
     }
 }
