@@ -16,4 +16,9 @@ G.add_edge(nodes[2], nodes[3])
 print(G.nodes)
 print(G.edges)
 
-morse.persistence(G)
+result = morse.persistence(G)
+
+assert(result[-1] == 0)
+assert(abs(result[3] - 0.4) < 0.00001)
+
+print(result)
