@@ -30,7 +30,9 @@ fn knn_persistence_py(py: Python, points: PyList, k: usize) -> PyResult<PyDict> 
     for point in points.iter(py) {
         labeled_points.push(point.extract(py)?);
     }
+    println!("about to build the graph");
     let mut g = graph::build_knn(&labeled_points, k);
+    println!("built");
     let mut complex = morse::MorseComplex::from_graph(&mut g);
     let lifetimes = complex.compute_persistence();
     let lifetimes: HashMap<i64, f64> = lifetimes.iter()
@@ -72,7 +74,7 @@ fn persistence_py(py: Python, nodes: PyList, edges: PyList) -> PyResult<PyDict> 
 #[derive(Debug)]
 pub struct LabeledPoint {
     pub id: i64,
-    pub point: Array1<f64>,
+    pub point: Vec<f64>,
     pub value: f64
 }
 
@@ -81,10 +83,10 @@ impl<'s> FromPyObject<'s> for LabeledPoint {
         let id: i64 = obj.getattr(py, "identifier")?.extract(py)?;
         let value: f64 = obj.getattr(py, "value")?.extract(py)?;
         let list: PyList = obj.getattr(py, "vector")?.extract(py)?;
-        let mut point: Array1<f64> = Array1::zeros(list.len(py));
+        let mut point: Vec<f64> = Vec::with_capacity(list.len(py));
         for (i, value) in list.iter(py).enumerate() {
             let v = value.extract(py)?;
-            point[i] = v;
+            point.push(v);
         };
         Ok(LabeledPoint{id, value, point})
     }
@@ -120,12 +122,5 @@ impl LabeledPoint {
             points.push(LabeledPoint::from_record(&record));
         }
         Ok(points)
-    }
-
-    fn grade(&self, other: &LabeledPoint) -> f64{
-        let diff = &self.point - &other.point;
-        let distance = diff.dot(&diff).sqrt();
-        let value_diff = self.value - other.value;
-        value_diff / distance
     }
 }
