@@ -11,6 +11,7 @@ ndarray = "0.13.0"
 petgraph = "0.5.0"
 itertools = "0.8.2"
 csv = "1.1"
+kdtree = "0.5.1"
 
 [lib]
 crate-type = ["cdylib", "lib"]
@@ -18,3 +19,6 @@ crate-type = ["cdylib", "lib"]
 [dependencies.cpython]
 version = "0.4"
 features = ["extension-module"]
+
+[profile.release]
+debug = true

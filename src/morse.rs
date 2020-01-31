@@ -177,8 +177,8 @@ mod tests {
     fn test_single() {
         let mut graph = Graph::new_undirected();
         let points = [
-            LabeledPoint{id: 0, value: -1., point: arr1(&[0., 0.])},
-            LabeledPoint{id: 1, value: 1., point: arr1(&[1., 0.])},
+            LabeledPoint{id: 0, value: -1., point: vec![0., 0.]},
+            LabeledPoint{id: 1, value: 1., point: vec![1., 0.]},
         ];
         let mut node_lookup = Vec::with_capacity(points.len());
         for point in &points {
@@ -196,9 +196,9 @@ mod tests {
     fn test_triangle() {
         let mut graph = Graph::new_undirected();
         let points = [
-            LabeledPoint{id: 0, value: -1., point: arr1(&[0., 0.])},
-            LabeledPoint{id: 1, value: 0., point: arr1(&[1., 1.])},
-            LabeledPoint{id: 2, value: 1., point: arr1(&[1., 0.])},
+            LabeledPoint{id: 0, value: -1., point: vec![0., 0.]},
+            LabeledPoint{id: 1, value: 0., point: vec![1., 1.]},
+            LabeledPoint{id: 2, value: 1., point: vec![1., 0.]},
         ];
         let mut node_lookup = Vec::with_capacity(points.len());
         for point in &points {
@@ -219,10 +219,10 @@ mod tests {
     fn test_square() {
         let mut graph = Graph::new_undirected();
         let points = [
-            LabeledPoint{id: 0, value: 1., point: arr1(&[0., 0.])},
-            LabeledPoint{id: 1, value: -1., point: arr1(&[1., 0.])},
-            LabeledPoint{id: 2, value: 0., point: arr1(&[0., 1.])},
-            LabeledPoint{id: 3, value: 2., point: arr1(&[1., 1.])},
+            LabeledPoint{id: 0, value: 1., point: vec![0., 0.]},
+            LabeledPoint{id: 1, value: -1., point: vec![1., 0.]},
+            LabeledPoint{id: 2, value: 0., point: vec![0., 1.]},
+            LabeledPoint{id: 3, value: 2., point: vec![1., 1.]},
         ];
         let mut node_lookup = Vec::with_capacity(points.len());
         for point in &points {
@@ -245,15 +245,15 @@ mod tests {
     fn test_big_square() {
         let mut graph = Graph::new_undirected();
         let points = [
-            LabeledPoint{id: 0, value: 6., point: arr1(&[0., 0.])},
-            LabeledPoint{id: 1, value: 2., point: arr1(&[1., 0.])},
-            LabeledPoint{id: 2, value: 3., point: arr1(&[2., 0.])},
-            LabeledPoint{id: 3, value: 5., point: arr1(&[0., 1.])},
-            LabeledPoint{id: 4, value: 4., point: arr1(&[1., 1.])},
-            LabeledPoint{id: 5, value: -5., point: arr1(&[1., 2.])},
-            LabeledPoint{id: 6, value: 0., point: arr1(&[0., 2.])},
-            LabeledPoint{id: 7, value: 1., point: arr1(&[1., 2.])},
-            LabeledPoint{id: 8, value: 10., point: arr1(&[2., 2.])},
+            LabeledPoint{id: 0, value: 6., point: vec![0., 0.]},
+            LabeledPoint{id: 1, value: 2., point: vec![1., 0.]},
+            LabeledPoint{id: 2, value: 3., point: vec![2., 0.]},
+            LabeledPoint{id: 3, value: 5., point: vec![0., 1.]},
+            LabeledPoint{id: 4, value: 4., point: vec![1., 1.]},
+            LabeledPoint{id: 5, value: -5., point: vec![1., 2.]},
+            LabeledPoint{id: 6, value: 0., point: vec![0., 2.]},
+            LabeledPoint{id: 7, value: 1., point: vec![1., 2.]},
+            LabeledPoint{id: 8, value: 10., point: vec![2., 2.]},
         ];
         let mut node_lookup = Vec::with_capacity(points.len());
         for point in &points {
