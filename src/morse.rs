@@ -91,12 +91,15 @@ impl<'a> MorseComplex<'a> {
         // We iterate through the points in descending order, which means we are
         // essentially building the morse complex at the same time that we compute
         // persistence.
+        let inverse_lookup: HashMap<NodeIndex, usize> = self.ordered_points.iter().enumerate()
+            .map(|x| (x.1.node, x.0))
+            .collect();
         for i in 0..self.ordered_points.len() {
             // find all *already processed* points that we have an edge to
-            let higher_indices: Vec<_> = self.ordered_points.iter().enumerate()
-                .take(i)
-                .filter(|(_, neighbor)| self.graph.find_edge(self.ordered_points[i].node, neighbor.node).is_some())
-                .map(|(j, _)| j)
+            let this_value = self.graph.node_weight(self.ordered_points[i].node).unwrap().value;
+            let higher_indices: Vec<usize> = self.graph.neighbors(self.ordered_points[i].node)
+                .filter(|n| self.graph.node_weight(*n).unwrap().value > this_value)
+                .map(|n| *inverse_lookup.get(&n).unwrap())
                 .collect();
 
             // Nothing to do if we have no neighbors, but if we do then we
