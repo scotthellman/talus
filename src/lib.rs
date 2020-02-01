@@ -34,7 +34,10 @@ fn knn_persistence_py(py: Python, points: PyList, k: usize) -> PyResult<PyDict> 
     let mut g = graph::build_knn(&labeled_points, k);
     println!("built");
     let mut complex = morse::MorseComplex::from_graph(&mut g);
-    let lifetimes = complex.compute_persistence();
+    let lifetimes = complex
+        .compute_morse_complex(morse::MorseKind::Descending)
+        .get_persistence(morse::MorseKind::Descending)
+        .expect("couldn't get lifetimes");
     let lifetimes: HashMap<i64, f64> = lifetimes.iter()
         .map(|(k,v)| {
             let id = g.node_weight(*k).unwrap().id;
@@ -61,7 +64,10 @@ fn persistence_py(py: Python, nodes: PyList, edges: PyList) -> PyResult<PyDict> 
         g.add_edge((id_lookup.get(&left).unwrap()).1, id_lookup.get(&right).unwrap().1, 0.);
     }
     let mut complex = morse::MorseComplex::from_graph(&mut g);
-    let lifetimes = complex.compute_persistence();
+    let lifetimes = complex
+        .compute_morse_complex(morse::MorseKind::Descending)
+        .get_persistence(morse::MorseKind::Descending)
+        .expect("couldn't get lifetimes");
     let lifetimes: HashMap<i64, f64> = lifetimes.iter()
         .map(|(k,v)| {
             let id = g.node_weight(*k).unwrap().id;

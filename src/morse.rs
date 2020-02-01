@@ -8,9 +8,36 @@ use std::f64;
 use super::LabeledPoint;
 
 #[derive(Debug)]
+struct MorseData {
+    lifetime: f64,
+    ancestor: NodeIndex  // TODO: I dunno what the "proper" name for this is
+}
+
+#[derive(Debug)]
 struct MorseNode {
     node: NodeIndex,
-    lifetime: Option<f64>,
+    ascending_data: Option<MorseData>,
+    descending_data: Option<MorseData>
+}
+
+impl MorseNode {
+    fn new(node: NodeIndex) -> MorseNode {
+        MorseNode{node, ascending_data: None, descending_data: None}
+    }
+
+    fn set_data(&mut self, data: MorseData, kind: MorseKind) {
+        match kind {
+            MorseKind::Ascending => self.ascending_data = Some(data),
+            MorseKind::Descending => self.descending_data = Some(data)
+        }
+    }
+
+    fn get_data(&self, kind: MorseKind) -> &Option<MorseData> {
+        match kind {
+            MorseKind::Ascending => &self.ascending_data,
+            MorseKind::Descending => &self.descending_data
+        }
+    }
 }
 
 impl Hash for MorseNode {
@@ -63,18 +90,30 @@ impl PointedUnionFind {
 }
 
 pub struct MorseComplex<'a> {
-    crystals: PointedUnionFind,
+    ascending_crystals: PointedUnionFind,
+    descending_crystals: PointedUnionFind,
     ordered_points: Vec<MorseNode>,
+    inverse_lookup: HashMap<NodeIndex, usize>,
     graph: &'a mut Graph<LabeledPoint, f64, petgraph::Undirected>
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum MorseKind {
+    Ascending,
+    Descending
 }
 
 impl<'a> MorseComplex<'a> {
     pub fn from_graph(graph: &'a mut Graph<LabeledPoint, f64, petgraph::Undirected>) -> MorseComplex<'a> {
         let ordered_points = MorseComplex::get_descending_nodes(graph);
+        let inverse_lookup: HashMap<NodeIndex, usize> = ordered_points.iter().enumerate()
+            .map(|x| (x.1.node, x.0))
+            .collect();
         let num_points = ordered_points.len();
-        let crystals = PointedUnionFind::new(num_points);
+        let ascending_crystals = PointedUnionFind::new(num_points);
+        let descending_crystals = PointedUnionFind::new(num_points);
 
-        MorseComplex{crystals, ordered_points, graph}
+        MorseComplex{ascending_crystals, descending_crystals, inverse_lookup, ordered_points, graph}
     }
 
     fn get_descending_nodes(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) -> Vec<MorseNode> {
@@ -84,65 +123,104 @@ impl<'a> MorseComplex<'a> {
                 let b_node = graph.node_weight(*b).expect("Node b wasn't in graph");
                 b_node.value.partial_cmp(&a_node.value).expect("Nan in the values")
             });
-        nodes.iter().enumerate().map(|(_, n)| MorseNode{node: *n, lifetime:None}).collect()
+        nodes.iter().enumerate().map(|(_, n)| MorseNode::new(*n)).collect()
     }
 
-    pub fn compute_persistence(&mut self) -> HashMap<NodeIndex, f64> {
+    pub fn get_persistence(&self, kind: MorseKind) -> Option<HashMap<NodeIndex, f64>> {
+        let mut result = HashMap::with_capacity(self.ordered_points.len());
+        for morse_node in self.ordered_points.iter() {
+            if let Some(data) = morse_node.get_data(kind) {
+                result.insert(morse_node.node, data.lifetime);
+            } else{
+                return None;
+            }
+        }
+        Some(result)
+    }
+
+    pub fn compute_morse_complex(&mut self, kind: MorseKind) -> &Self{
         // We iterate through the points in descending order, which means we are
         // essentially building the morse complex at the same time that we compute
         // persistence.
-        let inverse_lookup: HashMap<NodeIndex, usize> = self.ordered_points.iter().enumerate()
-            .map(|x| (x.1.node, x.0))
-            .collect();
-        for i in 0..self.ordered_points.len() {
+
+        // TODO: This feels like a bad way to handle the reversible order
+        let order: Vec<usize> = match kind {
+            MorseKind::Ascending => (0..self.ordered_points.len()).rev().collect(),
+            MorseKind::Descending => (0..self.ordered_points.len()).collect(),
+        };
+        for i in order {
             // find all *already processed* points that we have an edge to
             let this_value = self.graph.node_weight(self.ordered_points[i].node).unwrap().value;
             let higher_indices: Vec<usize> = self.graph.neighbors(self.ordered_points[i].node)
-                .filter(|n| self.graph.node_weight(*n).unwrap().value > this_value)
-                .map(|n| *inverse_lookup.get(&n).unwrap())
+                .filter(|n| { match kind {
+                        MorseKind::Ascending => self.graph.node_weight(*n).unwrap().value < this_value,
+                        MorseKind::Descending => self.graph.node_weight(*n).unwrap().value > this_value
+                    }
+                })
+                .map(|n| *self.inverse_lookup.get(&n).unwrap())
                 .collect();
 
             // Nothing to do if we have no neighbors, but if we do then we
             // have to merge the correspond morse crystals
-            if !higher_indices.is_empty() {
-                // this is not a maximum so it has no lifetime
-                self.ordered_points[i].lifetime = Some(0.);
+            let lifetime = if higher_indices.is_empty () {
+                f64::INFINITY  // FIXME: don't really like handling lifetimes this way
+            } else {
+                0.
+            };
+            let ancestor = self.merge_crystals(i, &higher_indices, kind);
 
-                self.merge_crystals(i, &higher_indices);
-            }
+            // this is not a maximum so it has no lifetime
+            self.ordered_points[i].set_data(MorseData{lifetime, ancestor}, kind);
         }
+        self
 
         // By definition, highest max has infinite persistence
-        self.ordered_points[0].lifetime = Some(f64::INFINITY);
+        // FIXME: for now I'm just letting None indicate this. Not ideal, probably
+        //self.ordered_points[0].lifetime = Some(f64::INFINITY);
 
-        self.ordered_points.iter()
-            .map(|morse_node| (morse_node.node, morse_node.lifetime.expect("no lifetime?")))
-            .collect()
+        //self.ordered_points.iter()
+        //    .map(|morse_node| (morse_node.node, morse_node.lifetime.expect("no lifetime?")))
+        //    .collect()
     }
 
-    fn merge_crystals(&mut self, ordered_index: usize, ascending_neighbors: &[usize]) {
+    fn union_crystals(&mut self, owning_index: usize, new_index: usize, kind: MorseKind) {
+        match kind {
+            MorseKind::Ascending => self.ascending_crystals.union(owning_index, new_index),
+            MorseKind::Descending => self.descending_crystals.union(owning_index, new_index)
+        }
+    }
+
+    fn find_in_crystals(&self, index: usize, kind: MorseKind) -> usize {
+        match kind {
+            MorseKind::Ascending => self.ascending_crystals.find(index),
+            MorseKind::Descending => self.descending_crystals.find(index)
+        }
+    }
+
+    // FIXME: I don't like this signature. Not at all clear what this returned nodeindex means
+    fn merge_crystals(&mut self, ordered_index: usize, ascending_neighbors: &[usize], kind: MorseKind) -> NodeIndex {
         // If there are no neighbors, there's nothing to merge
         if ascending_neighbors.is_empty() {
-            return;
+            return self.ordered_points[ordered_index].node;
         }
 
         // one neighbor is easy, just union this point in to that neighbor's crystal
         if ascending_neighbors.len() == 1 {
             let neighbor_index = ascending_neighbors[0];
-            self.crystals.union(neighbor_index, ordered_index);
-            return;
+            self.union_crystals(neighbor_index, ordered_index, kind);
+            return self.ordered_points[neighbor_index].get_data(kind).as_ref().expect("Steepest neighbor had no data").ancestor;
         }
 
         // for multiple neighbors, first figure out if all neighbors are in the same crystal
         let connected_crystals: HashSet<_> = ascending_neighbors.iter()
-            .map(|&idx| self.crystals.find(idx))
+            .map(|&idx| self.find_in_crystals(idx, kind))
             .collect();
 
         // If they are all in the same crystal, it's the same as if there was just one neighbor
         if connected_crystals.len() == 1 {
             let neighbor_index = ascending_neighbors[0];
-            self.crystals.union(neighbor_index, ordered_index);
-            return;
+            self.union_crystals(neighbor_index, ordered_index, kind);
+            return self.ordered_points[neighbor_index].get_data(kind).as_ref().expect("Steepest neighbor had no data").ancestor;
         }
 
         // And if we're here then we're merging crystals
@@ -156,18 +234,38 @@ impl<'a> MorseComplex<'a> {
             .max_by(|a, b| a.0.partial_cmp(&b.0).expect("Nan in the values"))
             .expect("No maximum was found, somehow?");
 
-        // now we need to update the lifetimes and merge the other crystals
         let joining_node = &self.ordered_points[ordered_index];
+
+        let (_, steepest_neighbor) = ascending_neighbors.iter()
+            .map(|&idx| {
+                let node = &self.ordered_points[idx];
+                let edge = self.graph.find_edge(joining_node.node, node.node).expect("A neighbor wasn't really a neighbor");
+                // unwrap_or here because hte persistence calculation is still meaningful
+                // even we we aren't in a metric space, so lack of grade information shouldn't
+                // block the computation
+                (*self.graph.edge_weight(edge).unwrap_or(&0.), idx)
+            })
+            .max_by(|a, b| match kind {
+                MorseKind::Descending => a.0.partial_cmp(&b.0).expect("Nan in the values"),
+                MorseKind::Ascending => b.0.partial_cmp(&a.0).expect("Nan in the values")
+            })
+            .expect("No steepset neighbor was found, somehow?");
+
+        // now we need to update the lifetimes and merge the other crystals
         let joining_value = self.graph.node_weight(joining_node.node).expect("joining node wasn't in the graph").value;
-        self.crystals.union(max_crystal, ordered_index);
+        self.union_crystals(max_crystal, ordered_index, kind);
         for crystal in connected_crystals {
             if crystal != max_crystal {
                 let crystal_node = &self.ordered_points[crystal];
                 let crystal_value = self.graph.node_weight(crystal_node.node).expect("crystal node wasn't in the graph").value;
-                self.ordered_points[crystal].lifetime = Some(crystal_value - joining_value);
-                self.crystals.union(max_crystal, crystal);
+                let ancestor = self.ordered_points[crystal].get_data(kind).as_ref().expect("crystal had no data").ancestor;
+                let lifetime = crystal_value - joining_value;
+                self.ordered_points[crystal].set_data(MorseData{ancestor, lifetime}, kind);
+                self.union_crystals(max_crystal, crystal, kind);
             }
         }
+        // TODO: I don't entirely understand why i need as_ref here
+        self.ordered_points[steepest_neighbor].get_data(kind).as_ref().expect("steepest neighbor had no data").ancestor
     }
 }
 
@@ -190,7 +288,10 @@ mod tests {
         }
         graph.add_edge(node_lookup[0], node_lookup[1], 0.);
         let mut complex = MorseComplex::from_graph(&mut graph);
-        let lifetimes = complex.compute_persistence();
+        let lifetimes = complex
+            .compute_morse_complex(MorseKind::Descending)
+            .get_persistence(MorseKind::Descending)
+            .expect("couldn't get lifetimes");
         assert_eq!(lifetimes[&node_lookup[0]], 0.);
         assert_eq!(lifetimes[&node_lookup[1]], f64::INFINITY);
     }
@@ -212,7 +313,10 @@ mod tests {
         graph.add_edge(node_lookup[0], node_lookup[2], 0.);
         graph.add_edge(node_lookup[1], node_lookup[2], 0.);
         let mut complex = MorseComplex::from_graph(&mut graph);
-        let lifetimes = complex.compute_persistence();
+        let lifetimes = complex
+            .compute_morse_complex(MorseKind::Descending)
+            .get_persistence(MorseKind::Descending)
+            .expect("couldn't get lifetimes");
         assert_eq!(lifetimes[&node_lookup[0]], 0.);
         assert_eq!(lifetimes[&node_lookup[1]], 0.);
         assert_eq!(lifetimes[&node_lookup[2]], f64::INFINITY);
@@ -237,7 +341,10 @@ mod tests {
         graph.add_edge(node_lookup[1], node_lookup[3], 0.);
         graph.add_edge(node_lookup[2], node_lookup[3], 0.);
         let mut complex = MorseComplex::from_graph(&mut graph);
-        let lifetimes = complex.compute_persistence();
+        let lifetimes = complex
+            .compute_morse_complex(MorseKind::Descending)
+            .get_persistence(MorseKind::Descending)
+            .expect("couldn't get lifetimes");
         assert_eq!(lifetimes[&node_lookup[0]], 1.);
         assert_eq!(lifetimes[&node_lookup[1]], 0.);
         assert_eq!(lifetimes[&node_lookup[2]], 0.);
@@ -276,7 +383,10 @@ mod tests {
         graph.add_edge(node_lookup[6], node_lookup[7], 0.);
         graph.add_edge(node_lookup[7], node_lookup[8], 0.);
         let mut complex = MorseComplex::from_graph(&mut graph);
-        let lifetimes = complex.compute_persistence();
+        let lifetimes = complex
+            .compute_morse_complex(MorseKind::Descending)
+            .get_persistence(MorseKind::Descending)
+            .expect("couldn't get lifetimes");
         assert_eq!(lifetimes[&node_lookup[0]], 5.);
         assert_eq!(lifetimes[&node_lookup[1]], 0.);
         assert_eq!(lifetimes[&node_lookup[2]], 1.);
