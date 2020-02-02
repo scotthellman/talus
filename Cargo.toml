@@ -12,6 +12,7 @@ petgraph = "0.5.0"
 itertools = "0.8.2"
 csv = "1.1"
 kdtree = "0.5.1"
+rand = "0.7.3"
 
 [lib]
 crate-type = ["cdylib", "lib"]
