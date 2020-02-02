@@ -5,7 +5,7 @@ use petgraph::graph::{Graph, NodeIndex};
 use kdtree::KdTree;
 use kdtree::distance::squared_euclidean;
 use kdtree::ErrorKind;
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::f64;
 use rand::prelude::*;
 use std::cmp::Ordering;
@@ -53,6 +53,8 @@ impl TargetNeighbors {
     }
 
     fn reversed_targets(targets: &Vec<TargetNeighbors>) -> Vec<TargetNeighbors> {
+        // FIXME: I shouldn't have to build this. Just add on to target neighbors in some
+        // principled way?
         let capacity = targets[0].old.len();
         let mut reversed: Vec<_> = (0..targets.len())
             .map(|_| TargetNeighbors{old: Vec::with_capacity(capacity), new: Vec::with_capacity(capacity)})
@@ -117,6 +119,18 @@ fn update_neighbors(data: &mut Vec<NeighborData>, data_idx: usize, neighbor: usi
     false
 }
 
+fn rejection_sample(count: usize, range: usize, rng: &mut ThreadRng) -> Vec<usize> {
+    if range < count {
+        // FIXME yeah this can't stay like this
+        panic!();
+    }
+    let mut sample: HashSet<usize> = HashSet::with_capacity(count);
+    while sample.len() < count {
+        sample.insert(rng.gen_range(0, range));
+    }
+    sample.iter().copied().collect()
+}
+
 pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64, precision: f64) 
     -> Graph<LabeledPoint, f64, petgraph::Undirected> {
     // https://www.cs.princeton.edu/cass/papers/www11.pdf
@@ -125,27 +139,31 @@ pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64
 
     let mut rng = rand::thread_rng();
     // This should be a vector of heaps, but rust's heap won't quite do it so
+    println!("data structures building");
     let mut approximate_neighbors: Vec<Vec<NeighborData>> = (0..points.len())
         .map(|i| {
-            (0..points.len())
-                .filter(|&j| i != j)
-                .choose_multiple(&mut rng, k)
-                .iter()
+            let points = rejection_sample(k, points.len(), &mut rng);
+            points.iter()
                 .map(|&j| NeighborData{distance: f64::INFINITY, idx:j, state: NeighborState::New})
                 .collect()
         })
         .collect();
+    println!("data structures built");
     let mut done = false;
     let mut iters = 0;
     while !done {
         iters += 1;
+        println!("1");
         let mut targets: Vec<TargetNeighbors> = approximate_neighbors.iter_mut()
             .map(|neighbors| TargetNeighbors::sample_neighbors(neighbors, sample_rate))
             .collect();
+        println!("2");
         let reversed_targets = TargetNeighbors::reversed_targets(&targets);
+        println!("3");
         for (i, reversed) in reversed_targets.iter().enumerate() {
             targets[i].sample_from_other(reversed, sample_rate);
         }
+        println!("4");
 
         let mut counter = 0;
 
@@ -167,8 +185,12 @@ pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64
                 }
             }
         }
+        println!("5");
 
-        done = counter < (precision * points.len() as f64 * k as f64) as i64;
+        //println!("-------");
+        //println!("{:?}", approximate_neighbors);
+        println!("{} < {}", counter, (precision * points.len() as f64 * k as f64) as i64);
+        done = counter <= (precision * points.len() as f64 * k as f64) as i64;
         if iters > 2000 {
             // FIXME: This should probably be more graceful than full-on panicking 
             panic!();
@@ -282,7 +304,7 @@ mod tests {
         expected_adjacencies.insert(5, vec![3, 4, 6]);
         expected_adjacencies.insert(6, vec![4, 5]);
 
-        let g = build_knn_approximate(&points, 2, 1., 1.);
+        let g = build_knn_approximate(&points, 2, 0.8, 0.01);
         for node in g.node_indices() {
             let id = g.node_weight(node).unwrap().id;
             let adj_ids: HashSet<i64> = g.neighbors(node)

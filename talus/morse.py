@@ -25,3 +25,7 @@ def persistence(graph):
 
 def persistence_by_knn(points, k):
     return talus._persistence_by_knn(points, k)
+
+
+def persistence_by_approximate_knn(points, k, sample_rate, precision):
+    return talus._persistence_by_approximate_knn(points, k, sample_rate, precision)
