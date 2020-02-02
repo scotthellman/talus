@@ -153,11 +153,15 @@ impl<'a> MorseComplex<'a> {
             let this_value = self.graph.node_weight(self.ordered_points[i].node).unwrap().value;
             let higher_indices: Vec<usize> = self.graph.neighbors(self.ordered_points[i].node)
                 .filter(|n| { match kind {
-                        MorseKind::Ascending => self.graph.node_weight(*n).unwrap().value < this_value,
-                        MorseKind::Descending => self.graph.node_weight(*n).unwrap().value > this_value
+                        MorseKind::Ascending => self.graph.node_weight(*n).unwrap().value <= this_value,
+                        MorseKind::Descending => self.graph.node_weight(*n).unwrap().value >= this_value
                     }
                 })
                 .map(|n| *self.inverse_lookup.get(&n).unwrap())
+                .filter(|&n_idx| { match kind {
+                        MorseKind::Ascending => n_idx > i,
+                        MorseKind::Descending => n_idx < i
+                }})
                 .collect();
 
             // Nothing to do if we have no neighbors, but if we do then we
@@ -200,6 +204,7 @@ impl<'a> MorseComplex<'a> {
     // FIXME: I don't like this signature. Not at all clear what this returned nodeindex means
     fn merge_crystals(&mut self, ordered_index: usize, ascending_neighbors: &[usize], kind: MorseKind) -> NodeIndex {
         // If there are no neighbors, there's nothing to merge
+        // FIXME: "ascending_neighbors" is a bad name
         if ascending_neighbors.is_empty() {
             return self.ordered_points[ordered_index].node;
         }
@@ -349,6 +354,39 @@ mod tests {
         assert_eq!(lifetimes[&node_lookup[1]], 0.);
         assert_eq!(lifetimes[&node_lookup[2]], 0.);
         assert_eq!(lifetimes[&node_lookup[3]], f64::INFINITY);
+    }
+
+    #[test]
+    fn test_all_equal_values() {
+        let mut graph = Graph::new_undirected();
+        let points = [
+            LabeledPoint{id: 0, value: 0., point: vec![0., 0.]},
+            LabeledPoint{id: 1, value: 0., point: vec![1., 0.]},
+            LabeledPoint{id: 2, value: 0., point: vec![0., 1.]},
+            LabeledPoint{id: 3, value: 0., point: vec![1., 1.]},
+            LabeledPoint{id: 4, value: 1., point: vec![1., 1.]},
+        ];
+        let mut node_lookup = Vec::with_capacity(points.len());
+        for point in &points {
+            let node = graph.add_node(point.to_owned());
+            node_lookup.push(node);
+        }
+        graph.add_edge(node_lookup[0], node_lookup[1], 0.);
+        graph.add_edge(node_lookup[0], node_lookup[2], 0.);
+        graph.add_edge(node_lookup[1], node_lookup[3], 0.);
+        graph.add_edge(node_lookup[2], node_lookup[3], 0.);
+        graph.add_edge(node_lookup[2], node_lookup[4], 0.);
+        let mut complex = MorseComplex::from_graph(&mut graph);
+        let lifetimes = complex
+            .compute_morse_complex(MorseKind::Descending)
+            .get_persistence(MorseKind::Descending)
+            .expect("couldn't get lifetimes");
+        println!("{:?}", lifetimes);
+        assert_eq!(lifetimes[&node_lookup[0]], 0.);
+        assert_eq!(lifetimes[&node_lookup[1]], 0.);
+        assert_eq!(lifetimes[&node_lookup[2]], 0.);
+        assert_eq!(lifetimes[&node_lookup[3]], 0.);
+        assert_eq!(lifetimes[&node_lookup[4]], f64::INFINITY);
     }
 
     #[test]
