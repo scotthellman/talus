@@ -110,6 +110,12 @@ impl LabeledPoint {
         LabeledPoint{id, point, value}
     }
 
+    fn distance(&self, other: &Self) -> f64 {
+        self.point.iter().zip(other.point.iter())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f64>().sqrt()
+    }
+
     pub fn to_owned(&self) -> LabeledPoint {
         // This is basically clone? I'm just copying the name from ndarray for now
         LabeledPoint{value: self.value, point: self.point.to_owned(), id: self.id}
