@@ -1,11 +1,12 @@
 use ndarray::prelude::*;
+use std::hash::{Hash, Hasher};
 use std::cmp::Ord;
 use itertools::Itertools;
 use petgraph::graph::{Graph, NodeIndex};
 use kdtree::KdTree;
 use kdtree::distance::squared_euclidean;
 use kdtree::ErrorKind;
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::f64;
 use rand::prelude::*;
 use std::cmp::Ordering;
@@ -18,6 +19,15 @@ enum NeighborState {
     Old
 }
 
+impl NeighborState {
+    fn is_new(&self) -> bool {
+        match self {
+            NeighborState::New => true,
+            NeighborState::Old => false
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct NeighborData {
     distance: f64,
@@ -25,71 +35,52 @@ struct NeighborData {
     state: NeighborState
 }
 
-#[derive(Debug)]
-struct TargetNeighbors {
-    old: Vec<NeighborData>,
-    new: Vec<NeighborData>
+impl Hash for NeighborData {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.idx.hash(state);
+    }
 }
 
-impl TargetNeighbors {
-    fn sample_neighbors(neighbors: &mut Vec<NeighborData>, sample_rate: f64) -> TargetNeighbors {
-        let mut rng = rand::thread_rng(); //FIXME: This should probably be threaded through the call
-        let mut old = Vec::with_capacity(neighbors.len());
-        let mut new = Vec::with_capacity(neighbors.len());
-        for neighbor in neighbors.iter_mut() {
-            match neighbor.state {
-                NeighborState::New => {
-                    if rng.gen_range(0., 1.) < sample_rate {
-                        neighbor.state = NeighborState::Old;
-                        new.push(*neighbor);
-                    }
-                },
-                NeighborState::Old => {
-                    old.push(*neighbor);
+impl PartialEq for NeighborData {
+    fn eq(&self, other: &Self) -> bool {
+        self.idx == other.idx
+    }
+}
+
+impl Eq for NeighborData {}
+
+
+fn sample_neighbors(neighbors: &mut Vec<NeighborData>, sample_rate: f64) -> HashSet<NeighborData> {
+    let mut rng = rand::thread_rng(); //FIXME: This should probably be threaded through the call
+    let mut targets = HashSet::with_capacity(neighbors.len());
+    for neighbor in neighbors.iter_mut() {
+        match neighbor.state {
+            NeighborState::New => {
+                if rng.gen_range(0., 1.) < sample_rate {
+                    targets.insert(*neighbor);
+                    neighbor.state = NeighborState::Old;
                 }
+            },
+            NeighborState::Old => {
+                targets.insert(*neighbor);
             }
         }
-        TargetNeighbors{old, new}
     }
+    targets
+}
 
-    fn reversed_targets(targets: &Vec<TargetNeighbors>) -> Vec<TargetNeighbors> {
-        // FIXME: I shouldn't have to build this. Just add on to target neighbors in some
-        // principled way?
-        let capacity = targets[0].old.len();
-        let mut reversed: Vec<_> = (0..targets.len())
-            .map(|_| TargetNeighbors{old: Vec::with_capacity(capacity), new: Vec::with_capacity(capacity)})
-            .collect();
-        for (i, target) in targets.iter().enumerate() {
-            for neighbor in target.old.iter() {
-                reversed[neighbor.idx].old.push(NeighborData{
-                    distance: neighbor.distance,
-                    idx: i,
-                    state: neighbor.state
-                });
-            }
-            for neighbor in target.new.iter() {
-                reversed[neighbor.idx].new.push(NeighborData{
-                    distance: neighbor.distance,
-                    idx: i,
-                    state: neighbor.state
-                });
-            }
-        }
-        reversed
-    }
-
-    fn sample_from_other(&mut self, other: &TargetNeighbors, sample_rate: f64) {
-        let mut rng = rand::thread_rng(); //FIXME: This should probably be threaded through the call
-        for neighbor in other.old.iter() {
-            if rng.gen_range(0., 1.) < sample_rate {
-                self.old.push(*neighbor)
-            }
-        }
-        for neighbor in other.new.iter() {
-            if rng.gen_range(0., 1.) < sample_rate {
-                self.new.push(*neighbor)
-            }
-        }
+fn add_reversed_targets(targets: &mut Vec<HashSet<NeighborData>>) {
+    // TODO: i don't love this
+    let acc: Vec<(usize, NeighborData)> = targets.iter().enumerate()
+        .flat_map(|(i, neighbors)| {
+            neighbors.iter()
+                .map(move |neighbor| {
+                    (neighbor.idx, NeighborData{ distance: neighbor.distance, idx: i, state: neighbor.state})
+                })
+            })
+        .collect();
+    for (idx, data) in acc {
+        targets[idx].insert(data);
     }
 }
 
@@ -139,7 +130,6 @@ pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64
 
     let mut rng = rand::thread_rng();
     // This should be a vector of heaps, but rust's heap won't quite do it so
-    println!("data structures building");
     let mut approximate_neighbors: Vec<Vec<NeighborData>> = (0..points.len())
         .map(|i| {
             let points = rejection_sample(k, points.len(), &mut rng);
@@ -148,48 +138,36 @@ pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64
                 .collect()
         })
         .collect();
-    println!("data structures built");
     let mut done = false;
     let mut iters = 0;
     while !done {
         iters += 1;
-        println!("1");
-        let mut targets: Vec<TargetNeighbors> = approximate_neighbors.iter_mut()
-            .map(|neighbors| TargetNeighbors::sample_neighbors(neighbors, sample_rate))
+        // FIXME: I'm making targets be a vec of hashsets
+        // because redudnant targets is a very real possibility and i need an O(1) solution to it
+        let mut targets: Vec<HashSet<NeighborData>> = approximate_neighbors.iter_mut()
+            .map(|neighbors| sample_neighbors(neighbors, sample_rate))
             .collect();
-        println!("2");
-        let reversed_targets = TargetNeighbors::reversed_targets(&targets);
-        println!("3");
-        for (i, reversed) in reversed_targets.iter().enumerate() {
-            targets[i].sample_from_other(reversed, sample_rate);
-        }
-        println!("4");
+        add_reversed_targets(&mut targets);
 
         let mut counter = 0;
 
-        for (_, targ) in targets.iter().enumerate() {
-            for (i, new_target) in targ.new.iter().enumerate() {
-                for other_new in targ.new.iter().skip(i+1){
-                    let distance = points[new_target.idx].distance(&points[other_new.idx]);
-                    let changed = update_neighbors(&mut approximate_neighbors[new_target.idx], new_target.idx, other_new.idx, distance, k);
-                    if changed {counter += 1};
-                    let changed = update_neighbors(&mut approximate_neighbors[other_new.idx], other_new.idx, new_target.idx, distance, k);
-                    if changed {counter += 1};
-                }
-                for other_old in targ.old.iter(){
-                    let distance = points[new_target.idx].distance(&points[other_old.idx]);
-                    let changed = update_neighbors(&mut approximate_neighbors[new_target.idx], new_target.idx, other_old.idx, distance, k);
-                    if changed {counter += 1};
-                    let changed = update_neighbors(&mut approximate_neighbors[other_old.idx], other_old.idx, new_target.idx, distance, k);
-                    if changed {counter += 1};
+        for targ in targets.iter() {
+            for (i, target) in targ.iter().enumerate() {
+                if let NeighborState::New = target.state {
+                    for (j, other) in targ.iter().enumerate() {
+                        // FIXME: does this need to be inverted for ascending
+                        if j < i || !other.state.is_new() {
+                            let distance = points[target.idx].distance(&points[other.idx]);
+                            let changed = update_neighbors(&mut approximate_neighbors[target.idx], target.idx, other.idx, distance, k);
+                            if changed {counter += 1};
+                            let changed = update_neighbors(&mut approximate_neighbors[other.idx], other.idx, target.idx, distance, k);
+                            if changed {counter += 1};
+                        }
+                    }
                 }
             }
         }
-        println!("5");
 
-        //println!("-------");
-        //println!("{:?}", approximate_neighbors);
-        println!("{} < {}", counter, (precision * points.len() as f64 * k as f64) as i64);
         done = counter <= (precision * points.len() as f64 * k as f64) as i64;
         if iters > 2000 {
             // FIXME: This should probably be more graceful than full-on panicking 
@@ -305,6 +283,7 @@ mod tests {
         expected_adjacencies.insert(6, vec![4, 5]);
 
         let g = build_knn_approximate(&points, 2, 0.8, 0.01);
+        println!("{:?}", g);
         for node in g.node_indices() {
             let id = g.node_weight(node).unwrap().id;
             let adj_ids: HashSet<i64> = g.neighbors(node)

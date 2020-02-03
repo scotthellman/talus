@@ -12,12 +12,16 @@ def build_nodes(n):
     return points
 
 
-for size in [100000]:
+for size in [500000]:
     print(size)
     points = build_nodes(size)
+    result = morse.persistence_by_approximate_knn(points, 8, 0.8, 0.001)
+    1/0
     start = time.time()
     result = morse.persistence_by_knn(points, 8)
-    result = morse.persistence_by_knn(points, 8)
-    result = morse.persistence_by_knn(points, 8)
+    print(time.time() - start)
+    print(size)
+    start = time.time()
+    result = morse.persistence_by_approximate_knn(points, 8, 0.5, 0.001)
     print(time.time() - start)
     print(len(result))
