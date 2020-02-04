@@ -70,7 +70,7 @@ fn knn_persistence_py(py: Python, points: PyList, k: usize) -> PyResult<PyDict> 
     Ok(lifetimes.to_py_object(py))
 }
 
-fn persistence_py(py: Python, nodes: PyList, edges: PyList) -> PyResult<PyDict> {
+fn persistence_py(py: Python, nodes: PyList, edges: PyList) -> PyResult<(PyDict, PyList, PyList)> {
     let mut labeled_nodes: Vec<NodeIndex> = Vec::with_capacity(nodes.len(py));
     let mut id_lookup: HashMap<i64, (usize, NodeIndex)> = HashMap::with_capacity(nodes.len(py));
     let mut g = Graph::new_undirected();
@@ -84,20 +84,32 @@ fn persistence_py(py: Python, nodes: PyList, edges: PyList) -> PyResult<PyDict> 
         let node_tuple: PyTuple = edge.extract(py)?;
         let left: i64 = node_tuple.get_item(py, 0).extract(py)?;
         let right: i64 = node_tuple.get_item(py, 1).extract(py)?;
-        g.add_edge((id_lookup.get(&left).unwrap()).1, id_lookup.get(&right).unwrap().1, 0.);
+        g.add_edge((id_lookup.get(&left).unwrap()).1, id_lookup.get(&right).unwrap().1, 1.);
     }
     let mut complex = morse::MorseComplex::from_graph(&mut g);
     let lifetimes = complex
         .compute_morse_complex(morse::MorseKind::Descending)
         .get_persistence(morse::MorseKind::Descending)
         .expect("couldn't get lifetimes");
+    let filtration = complex.get_filtration(morse::MorseKind::Descending);
+    let complex = complex.get_complex(morse::MorseKind::Descending);
     let lifetimes: HashMap<i64, f64> = lifetimes.iter()
         .map(|(k,v)| {
             let id = g.node_weight(*k).unwrap().id;
             (id, *v)
         })
         .collect();
-    Ok(lifetimes.to_py_object(py))
+    let filtration: Vec<(f64, i64, i64)> = filtration.iter()
+        .map(|(lifetime, node, parent)| {
+            (*lifetime, g.node_weight(*node).unwrap().id, g.node_weight(*parent).unwrap().id)
+        })
+        .collect();
+    let complex: Vec<(i64, i64)> = complex.iter()
+        .map(|(node, ancestor)| {
+            (g.node_weight(*node).unwrap().id, g.node_weight(*ancestor).unwrap().id)
+        })
+        .collect();
+    Ok((lifetimes.to_py_object(py), filtration.to_py_object(py), complex.to_py_object(py)))
 }
 
 #[derive(Debug)]

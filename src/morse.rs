@@ -145,6 +145,16 @@ impl<'a> MorseComplex<'a> {
         filtration
     }
 
+    pub fn get_complex(&self, kind: MorseKind) -> Vec<(NodeIndex, NodeIndex)> {
+        self.ordered_points.iter() 
+            // FIXME: get rid of this unwrap
+            .map(|point| {
+                let data = point.get_data(kind).as_ref().unwrap();
+                (point.node, data.ancestor)
+             })
+             .collect()
+    }
+
     pub fn get_persistence(&self, kind: MorseKind) -> Option<HashMap<NodeIndex, f64>> {
         let mut result = HashMap::with_capacity(self.ordered_points.len());
         for morse_node in self.ordered_points.iter() {
@@ -263,11 +273,12 @@ impl<'a> MorseComplex<'a> {
         let (_, steepest_neighbor) = ascending_neighbors.iter()
             .map(|&idx| {
                 let node = &self.ordered_points[idx];
+                let value = self.graph.node_weight(node.node).unwrap().value;
                 let edge = self.graph.find_edge(joining_node.node, node.node).expect("A neighbor wasn't really a neighbor");
                 // unwrap_or here because hte persistence calculation is still meaningful
                 // even we we aren't in a metric space, so lack of grade information shouldn't
                 // block the computation
-                (*self.graph.edge_weight(edge).unwrap_or(&0.), idx)
+                (value / *self.graph.edge_weight(edge).unwrap_or(&1.), idx)
             })
             .max_by(|a, b| match kind {
                 MorseKind::Descending => a.0.partial_cmp(&b.0).expect("Nan in the values"),
