@@ -10,6 +10,7 @@ use super::LabeledPoint;
 #[derive(Debug)]
 struct MorseData {
     lifetime: f64,
+    merge_parent: Option<NodeIndex>,
     ancestor: NodeIndex  // TODO: I dunno what the "proper" name for this is
 }
 
@@ -116,6 +117,7 @@ impl<'a> MorseComplex<'a> {
         MorseComplex{ascending_crystals, descending_crystals, inverse_lookup, ordered_points, graph}
     }
 
+
     fn get_descending_nodes(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) -> Vec<MorseNode> {
         let mut nodes: Vec<NodeIndex> = graph.node_indices().collect();
         nodes.sort_by(|a, b| {
@@ -124,6 +126,23 @@ impl<'a> MorseComplex<'a> {
                 b_node.value.partial_cmp(&a_node.value).expect("Nan in the values")
             });
         nodes.iter().enumerate().map(|(_, n)| MorseNode::new(*n)).collect()
+    }
+
+    // FIXME: once things get ironed out a bit more this should really be its own type
+    pub fn get_filtration(&self, kind: MorseKind) -> Vec<(f64, NodeIndex, NodeIndex)> {
+        let mut filtration = self.ordered_points.iter() 
+            // FIXME: get rid of this unwrap
+            .filter_map(|point| {
+                let data = point.get_data(kind).as_ref().unwrap();
+                if let Some(parent) = data.merge_parent {
+                    Some((data.lifetime, point.node, parent))
+                } else {
+                    None
+                }
+             })
+             .collect::<Vec<_>>();
+        filtration.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        filtration
     }
 
     pub fn get_persistence(&self, kind: MorseKind) -> Option<HashMap<NodeIndex, f64>> {
@@ -174,7 +193,7 @@ impl<'a> MorseComplex<'a> {
             let ancestor = self.merge_crystals(i, &higher_indices, kind);
 
             // this is not a maximum so it has no lifetime
-            self.ordered_points[i].set_data(MorseData{lifetime, ancestor}, kind);
+            self.ordered_points[i].set_data(MorseData{lifetime, ancestor, merge_parent: None}, kind);
         }
         self
 
@@ -258,6 +277,7 @@ impl<'a> MorseComplex<'a> {
 
         // now we need to update the lifetimes and merge the other crystals
         let joining_value = self.graph.node_weight(joining_node.node).expect("joining node wasn't in the graph").value;
+        let merge_parent = self.ordered_points[max_crystal].node;
         self.union_crystals(max_crystal, ordered_index, kind);
         for crystal in connected_crystals {
             if crystal != max_crystal {
@@ -265,7 +285,8 @@ impl<'a> MorseComplex<'a> {
                 let crystal_value = self.graph.node_weight(crystal_node.node).expect("crystal node wasn't in the graph").value;
                 let ancestor = self.ordered_points[crystal].get_data(kind).as_ref().expect("crystal had no data").ancestor;
                 let lifetime = crystal_value - joining_value;
-                self.ordered_points[crystal].set_data(MorseData{ancestor, lifetime}, kind);
+                self.ordered_points[crystal].set_data(MorseData{ancestor, lifetime, 
+                    merge_parent: Some(merge_parent)}, kind);
                 self.union_crystals(max_crystal, crystal, kind);
             }
         }
@@ -434,5 +455,46 @@ mod tests {
         assert_eq!(lifetimes[&node_lookup[6]], 0.);
         assert_eq!(lifetimes[&node_lookup[7]], 0.);
         assert_eq!(lifetimes[&node_lookup[8]], f64::INFINITY);
+    }
+
+    #[test]
+    fn test_filtration() {
+        let mut graph = Graph::new_undirected();
+        let points = [
+            LabeledPoint{id: 0, value: 3., point: vec![0., 0.]},
+            LabeledPoint{id: 1, value: -1., point: vec![1., 0.]},
+            LabeledPoint{id: 2, value: 10., point: vec![0., 1.]},
+            LabeledPoint{id: 3, value: 2., point: vec![1., 1.]},
+            LabeledPoint{id: 4, value: 7., point: vec![1., 1.]},
+        ];
+        let mut node_lookup = Vec::with_capacity(points.len());
+        for point in &points {
+            let node = graph.add_node(point.to_owned());
+            node_lookup.push(node);
+        }
+        graph.add_edge(node_lookup[0], node_lookup[1], 0.);
+        graph.add_edge(node_lookup[0], node_lookup[3], 0.);
+        graph.add_edge(node_lookup[1], node_lookup[2], 0.);
+        graph.add_edge(node_lookup[1], node_lookup[4], 0.);
+        graph.add_edge(node_lookup[3], node_lookup[4], 0.);
+        let mut complex = MorseComplex::from_graph(&mut graph);
+        let lifetimes = complex
+            .compute_morse_complex(MorseKind::Descending)
+            .get_persistence(MorseKind::Descending)
+            .expect("couldn't get lifetimes");
+        println!("{:?}", lifetimes);
+        assert_eq!(lifetimes[&node_lookup[0]], 1.);
+        assert_eq!(lifetimes[&node_lookup[1]], 0.);
+        assert_eq!(lifetimes[&node_lookup[2]], f64::INFINITY);
+        assert_eq!(lifetimes[&node_lookup[3]], 0.);
+        assert_eq!(lifetimes[&node_lookup[4]], 8.);
+
+        let filtration = complex.get_filtration(MorseKind::Descending);
+        let expected = [(1., node_lookup[0], node_lookup[4]), (8., node_lookup[4], node_lookup[2])];
+        for (actual, expected) in filtration.iter().zip(expected.iter()) {
+            assert_eq!(actual.0, expected.0);
+            assert_eq!(actual.1, expected.1);
+            assert_eq!(actual.2, expected.2);
+        }
     }
 }
