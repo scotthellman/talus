@@ -187,8 +187,6 @@ pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64
 
         let mut counter = 0;
 
-        println!("{:?}", approximate_neighbors);
-
         for row in 0..points.len() {
             let target_heap = targets.get_heap(row);
             for (i, target) in target_heap.iter().enumerate() {
@@ -230,8 +228,6 @@ fn update_neighbors(heap: &mut MorseHeap, data_idx: usize, neighbor: usize, dist
             return false;
         }
     }
-    println!("OK! At this point, {} is not in {:?}", neighbor, row);
-
     heap.insert(NeighborData{distance, idx: neighbor, state: NeighborState::New}, data_idx);
     true
 }
