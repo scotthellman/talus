@@ -28,6 +28,68 @@ impl NeighborState {
     }
 }
 
+// FIXME: there is 0 reason this should be specific to NeighorData
+#[derive(Debug)]
+struct MorseHeap {
+    heap: Vec<NeighborData>,
+    num_rows: usize,
+    num_cols: usize
+}
+
+impl MorseHeap {
+    fn new(num_rows: usize, num_cols: usize) -> MorseHeap {
+        // TODO: this doesn't feel great. These should probably be options, but how much
+        // does that cost?
+        let heap = (0..num_rows*num_cols)
+            .map(|_| NeighborData{distance: f64::INFINITY, idx: 0, state: NeighborState::New})
+            .collect();
+        MorseHeap{heap, num_rows, num_cols}
+    }
+
+    fn new_with_indices(indices: &[usize], num_rows: usize, num_cols: usize) -> MorseHeap {
+        // TODO: this doesn't feel great. These should probably be options, but how much
+        // does that cost?
+        let heap = (0..num_rows*num_cols)
+            .map(|i| NeighborData{distance: f64::INFINITY, idx: indices[i], state: NeighborState::New})
+            .collect();
+        MorseHeap{heap, num_rows, num_cols}
+    }
+
+    // this should really be an impl of Index for MorseHeap
+    fn get_heap(&self, i: usize) -> &[NeighborData] {
+        &self.heap[i*self.num_cols.. i*self.num_cols + self.num_cols]
+    }
+
+    fn get_heap_mut(&mut self, i: usize) -> &mut [NeighborData] {
+        &mut self.heap[i*self.num_cols.. i*self.num_cols + self.num_cols]
+    }
+
+    fn insert(&mut self, data: NeighborData, i: usize) {
+        let heap = self.get_heap_mut(i);
+        // should probably guard here if data > the root
+        heap[0] = data;
+        MorseHeap::heapify(heap, 0);
+    }
+
+    fn heapify(heap: &mut [NeighborData], i: usize) {
+        let left = i*2 + 1;
+        let right = i*2 + 2;
+        let mut largest = i;
+
+        if left < heap.len() && heap[left].distance > heap[largest].distance {
+            largest = left;
+        }
+        if right < heap.len() && heap[right].distance > heap[largest].distance {
+            largest = right;
+        }
+
+        if largest != i {
+            heap.swap(i, largest);
+            MorseHeap::heapify(heap, largest);
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct NeighborData {
     distance: f64,
@@ -50,64 +112,40 @@ impl PartialEq for NeighborData {
 impl Eq for NeighborData {}
 
 
-fn sample_neighbors(neighbors: &mut Vec<NeighborData>, sample_rate: f64) -> HashSet<NeighborData> {
+// FIXME: ugh this heap row thing is bad
+fn sample_neighbors(neighbors: &mut [NeighborData], sample_rate: f64, heap: &mut MorseHeap, heap_row: usize) {
     let mut rng = rand::thread_rng(); //FIXME: This should probably be threaded through the call
-    let mut targets = HashSet::with_capacity(neighbors.len());
     for neighbor in neighbors.iter_mut() {
+        let weight: f64 = rng.gen();
         match neighbor.state {
             NeighborState::New => {
                 if rng.gen_range(0., 1.) < sample_rate {
-                    targets.insert(*neighbor);
+                    let target = NeighborData{distance: weight, idx:neighbor.idx, state: neighbor.state};
+                    heap.insert(target, heap_row);
                     neighbor.state = NeighborState::Old;
                 }
             },
             NeighborState::Old => {
-                targets.insert(*neighbor);
+                let neighbor = NeighborData{distance: weight, idx:neighbor.idx, state: neighbor.state};
+                heap.insert(neighbor, heap_row);
             }
         }
     }
-    targets
 }
 
-fn add_reversed_targets(targets: &mut Vec<HashSet<NeighborData>>) {
+fn add_reversed_targets(targets: &mut MorseHeap) {
     // TODO: i don't love this
-    let acc: Vec<(usize, NeighborData)> = targets.iter().enumerate()
-        .flat_map(|(i, neighbors)| {
-            neighbors.iter()
+    let acc: Vec<(usize, NeighborData)> = (0..targets.num_rows)
+        .flat_map(|i| {
+            targets.get_heap(i).iter()
                 .map(move |neighbor| {
                     (neighbor.idx, NeighborData{ distance: neighbor.distance, idx: i, state: neighbor.state})
                 })
             })
         .collect();
     for (idx, data) in acc {
-        targets[idx].insert(data);
+        targets.insert(data, idx);
     }
-}
-
-fn update_neighbors(data: &mut Vec<NeighborData>, data_idx: usize, neighbor: usize, distance: f64, k: usize) -> bool {
-    // this is the only time we touch the vec of data, so if we end up sorted then we can 
-    // assume we started sorted
-    // TODO: this should really bisect but linear is harder to mess up for now
-    //   (let the record show that this was where the major bug in my impl was anyway)
-
-    if data_idx == neighbor {return false};
-    let mut index = None;
-    for (i, n_data) in data.iter().enumerate() {
-        if n_data.idx == neighbor {
-            return false;
-        }
-        if distance < n_data.distance {
-            index = Some(i);
-            break
-        }
-    }
-    if let Some(index) = index {
-
-        data.insert(index, NeighborData{distance, idx: neighbor, state: NeighborState::New});
-        data.truncate(k);
-        return true;
-    }
-    false
 }
 
 fn rejection_sample(count: usize, range: usize, rng: &mut ThreadRng) -> Vec<usize> {
@@ -125,43 +163,46 @@ fn rejection_sample(count: usize, range: usize, rng: &mut ThreadRng) -> Vec<usiz
 pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64, precision: f64) 
     -> Graph<LabeledPoint, f64, petgraph::Undirected> {
     // https://www.cs.princeton.edu/cass/papers/www11.pdf
-    // TODO: it's not entirely clear to me why i didn't just use petgraph for hte underlying
-    // datastructure here
 
+    let max_candidates = 30;
     let mut rng = rand::thread_rng();
-    // This should be a vector of heaps, but rust's heap won't quite do it so
-    let mut approximate_neighbors: Vec<Vec<NeighborData>> = (0..points.len())
-        .map(|i| {
-            let points = rejection_sample(k, points.len(), &mut rng);
-            points.iter()
-                .map(|&j| NeighborData{distance: f64::INFINITY, idx:j, state: NeighborState::New})
-                .collect()
+    let starting_indices: Vec<usize> = (0..points.len())
+        .flat_map(|_| {
+            rejection_sample(k, points.len(), &mut rng)
         })
         .collect();
+    let mut approximate_neighbors = MorseHeap::new_with_indices(&starting_indices, points.len(), k);
     let mut done = false;
     let mut iters = 0;
     while !done {
         iters += 1;
-        // FIXME: I'm making targets be a vec of hashsets
-        // because redudnant targets is a very real possibility and i need an O(1) solution to it
-        let mut targets: Vec<HashSet<NeighborData>> = approximate_neighbors.iter_mut()
-            .map(|neighbors| sample_neighbors(neighbors, sample_rate))
-            .collect();
+
+        //cribbing this from the pynndescent impl
+        let mut targets = MorseHeap::new(points.len(), max_candidates);
+        // FIXME: MorseHeap should be iter
+        for i in 0..points.len() {
+            sample_neighbors(approximate_neighbors.get_heap_mut(i), sample_rate, &mut targets, i);
+        }
         add_reversed_targets(&mut targets);
 
         let mut counter = 0;
 
-        for targ in targets.iter() {
-            for (i, target) in targ.iter().enumerate() {
+        println!("{:?}", approximate_neighbors);
+
+        for row in 0..points.len() {
+            let target_heap = targets.get_heap(row);
+            for (i, target) in target_heap.iter().enumerate() {
                 if let NeighborState::New = target.state {
-                    for (j, other) in targ.iter().enumerate() {
-                        // FIXME: does this need to be inverted for ascending
+                    for (j, other) in target_heap.iter().enumerate() {
+                        // FIXME: None of this works of ascending.
                         if j < i || !other.state.is_new() {
                             let distance = points[target.idx].distance(&points[other.idx]);
-                            let changed = update_neighbors(&mut approximate_neighbors[target.idx], target.idx, other.idx, distance, k);
-                            if changed {counter += 1};
-                            let changed = update_neighbors(&mut approximate_neighbors[other.idx], other.idx, target.idx, distance, k);
-                            if changed {counter += 1};
+                            if update_neighbors(&mut approximate_neighbors, target.idx, other.idx, distance) {
+                                counter += 1;
+                            }
+                            if update_neighbors(&mut approximate_neighbors, other.idx, target.idx, distance) {
+                                counter += 1;
+                            }
                         }
                     }
                 }
@@ -175,10 +216,27 @@ pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64
         }
     }
 
-    graph_from_neighbordata(points, approximate_neighbors)
+    graph_from_neighbordata(points, &approximate_neighbors)
 }
 
-fn graph_from_neighbordata(points: &[LabeledPoint], neighbors: Vec<Vec<NeighborData>>)
+fn update_neighbors(heap: &mut MorseHeap, data_idx: usize, neighbor: usize, distance: f64) -> bool {
+    if data_idx == neighbor {return false};
+    let row = heap.get_heap_mut(data_idx);
+    if row[0].distance < distance {
+        return false;
+    }
+    for n_data in row.iter() {
+        if n_data.idx == neighbor {
+            return false;
+        }
+    }
+    println!("OK! At this point, {} is not in {:?}", neighbor, row);
+
+    heap.insert(NeighborData{distance, idx: neighbor, state: NeighborState::New}, data_idx);
+    true
+}
+
+fn graph_from_neighbordata(points: &[LabeledPoint], neighbors: &MorseHeap)
     -> Graph<LabeledPoint, f64, petgraph::Undirected> {
     let mut neighbor_graph = Graph::new_undirected();
     let mut node_lookup = Vec::with_capacity(points.len());
@@ -187,9 +245,10 @@ fn graph_from_neighbordata(points: &[LabeledPoint], neighbors: Vec<Vec<NeighborD
         node_lookup.push(node);
     }
 
-    for (i, data) in neighbors.iter().enumerate() {
-        for neighbor in data{
-            neighbor_graph.update_edge(node_lookup[i], node_lookup[neighbor.idx], neighbor.distance);
+    for row in 0..points.len(){
+        let data = neighbors.get_heap(row);
+        for neighbor in data {
+            neighbor_graph.update_edge(node_lookup[row], node_lookup[neighbor.idx], neighbor.distance);
         }
     }
 
