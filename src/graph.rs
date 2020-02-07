@@ -1,15 +1,10 @@
-use ndarray::prelude::*;
 use std::hash::{Hash, Hasher};
-use std::cmp::Ord;
-use itertools::Itertools;
-use petgraph::graph::{Graph, NodeIndex};
+use petgraph::graph::Graph;
 use kdtree::KdTree;
 use kdtree::distance::squared_euclidean;
-use kdtree::ErrorKind;
-use std::collections::{HashSet, HashMap};
+use std::collections::HashSet;
 use std::f64;
 use rand::prelude::*;
-use std::cmp::Ordering;
 
 use super::LabeledPoint;
 
@@ -20,7 +15,7 @@ enum NeighborState {
 }
 
 impl NeighborState {
-    fn is_new(&self) -> bool {
+    fn is_new(self) -> bool {
         match self {
             NeighborState::New => true,
             NeighborState::Old => false
@@ -125,13 +120,11 @@ fn rejection_sample(count: usize, range: usize, rng: &mut ThreadRng) -> Vec<usiz
 pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64, precision: f64) 
     -> Graph<LabeledPoint, f64, petgraph::Undirected> {
     // https://www.cs.princeton.edu/cass/papers/www11.pdf
-    // TODO: it's not entirely clear to me why i didn't just use petgraph for hte underlying
-    // datastructure here
 
     let mut rng = rand::thread_rng();
     // This should be a vector of heaps, but rust's heap won't quite do it so
     let mut approximate_neighbors: Vec<Vec<NeighborData>> = (0..points.len())
-        .map(|i| {
+        .map(|_| {
             let points = rejection_sample(k, points.len(), &mut rng);
             points.iter()
                 .map(|&j| NeighborData{distance: f64::INFINITY, idx:j, state: NeighborState::New})
@@ -142,7 +135,7 @@ pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64
     let mut iters = 0;
     while !done {
         iters += 1;
-        // FIXME: I'm making targets be a vec of hashsets
+        // I'm making targets be a vec of hashsets
         // because redudnant targets is a very real possibility and i need an O(1) solution to it
         let mut targets: Vec<HashSet<NeighborData>> = approximate_neighbors.iter_mut()
             .map(|neighbors| sample_neighbors(neighbors, sample_rate))

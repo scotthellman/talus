@@ -1,5 +1,3 @@
-use ndarray::prelude::*;
-
 use std::fs::File;
 use std::f64;
 use std::error::Error;
@@ -125,13 +123,12 @@ impl<'s> FromPyObject<'s> for LabeledPoint {
         let value: f64 = obj.getattr(py, "value")?.extract(py)?;
         let list: PyList = obj.getattr(py, "vector")?.extract(py)?;
         let mut point: Vec<f64> = Vec::with_capacity(list.len(py));
-        for (i, value) in list.iter(py).enumerate() {
+        for value in list.iter(py) {
             let v = value.extract(py)?;
             point.push(v);
         };
         Ok(LabeledPoint{id, value, point})
     }
-
 }
 
 impl LabeledPoint {
