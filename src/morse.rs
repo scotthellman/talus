@@ -1,4 +1,4 @@
-use petgraph::graph::{Graph, NodeIndex};
+use petgraph::graph::{UnGraph, NodeIndex};
 use petgraph::unionfind::UnionFind;
 
 use std::collections::{HashSet, HashMap};
@@ -17,8 +17,7 @@ struct MorseData {
 #[derive(Debug)]
 struct MorseNode {
     node: NodeIndex,
-    ascending_data: Option<MorseData>,
-    descending_data: Option<MorseData>
+    data: Option<MorseData>
 }
 
 impl MorseNode {
@@ -90,12 +89,43 @@ impl PointedUnionFind {
     }
 }
 
-pub struct MorseComplex<'a> {
-    ascending_crystals: PointedUnionFind,
-    descending_crystals: PointedUnionFind,
+
+type MorseFiltration = (f64, NodeIndex, NodeIndex);
+
+pub struct MorseSmaleComplex {
+    graph: UnGraph<LabeledPoint, f64>,
+    ascending_complex: MorseComplex,
+    descending_complex: MorseComplex
+}
+
+pub struct MorseComplex {
     ordered_points: Vec<MorseNode>,
-    inverse_lookup: HashMap<NodeIndex, usize>,
-    graph: &'a mut Graph<LabeledPoint, f64, petgraph::Undirected>
+    cells: PointedUnionFind,
+    filtration: Option<Vec<MorseFiltration>>,
+    kind: MorseKind
+}
+
+impl MorseComplex {
+    fn from_graph(kind: MorseKind, graph: &UnGraph<LabeledPoint, f64>) -> MorseComplex {
+        let ordered_points = MorseComplex::get_ordered_points(kind, &graph);
+        let num_points = ordered_points.len();
+        let cells = PointedUnionFind::new(num_points);
+        let filtration = None;
+        MorseComplex{kind, ordered_points, cells, filtration}
+    }
+
+    fn get_ordered_points(kind: MorseKind, graph: &UnGraph<LabeledPoint, f64>) -> Vec<MorseNode> {
+        let mut nodes: Vec<NodeIndex> = graph.node_indices().collect();
+        nodes.sort_by(|a, b| {
+                let a_node = graph.node_weight(*a).expect("Node a wasn't in graph");
+                let b_node = graph.node_weight(*b).expect("Node b wasn't in graph");
+                match kind {
+                    MorseKind::Descending => b_node.value.partial_cmp(&a_node.value).expect("Nan in the values"),
+                    MorseKind::Ascending => a_node.value.partial_cmp(&b_node.value).expect("Nan in the values")
+                }
+            });
+        nodes.iter().enumerate().map(|(_, n)| MorseNode::new(*n)).collect()
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -104,29 +134,14 @@ pub enum MorseKind {
     Descending
 }
 
-impl<'a> MorseComplex<'a> {
-    pub fn from_graph(graph: &'a mut Graph<LabeledPoint, f64, petgraph::Undirected>) -> MorseComplex<'a> {
-        let ordered_points = MorseComplex::get_descending_nodes(graph);
-        let inverse_lookup: HashMap<NodeIndex, usize> = ordered_points.iter().enumerate()
-            .map(|x| (x.1.node, x.0))
-            .collect();
-        let num_points = ordered_points.len();
-        let ascending_crystals = PointedUnionFind::new(num_points);
-        let descending_crystals = PointedUnionFind::new(num_points);
+impl MorseSmaleComplex {
+    pub fn from_graph(graph: UnGraph<LabeledPoint, f64>) -> MorseSmaleComplex {
+        let ascending_complex = MorseComplex::from_graph(MorseKind::Ascending, &graph);
+        let descending_complex = MorseComplex::from_graph(MorseKind::Descending, &graph);
 
-        MorseComplex{ascending_crystals, descending_crystals, inverse_lookup, ordered_points, graph}
+        MorseSmaleComplex{graph, ascending_complex, descending_complex}
     }
 
-
-    fn get_descending_nodes(graph: &Graph<LabeledPoint, f64, petgraph::Undirected>) -> Vec<MorseNode> {
-        let mut nodes: Vec<NodeIndex> = graph.node_indices().collect();
-        nodes.sort_by(|a, b| {
-                let a_node = graph.node_weight(*a).expect("Node a wasn't in graph");
-                let b_node = graph.node_weight(*b).expect("Node b wasn't in graph");
-                b_node.value.partial_cmp(&a_node.value).expect("Nan in the values")
-            });
-        nodes.iter().enumerate().map(|(_, n)| MorseNode::new(*n)).collect()
-    }
 
     // FIXME: once things get ironed out a bit more this should really be its own type
     pub fn get_filtration(&self, kind: MorseKind) -> Vec<(f64, NodeIndex, NodeIndex)> {
@@ -157,6 +172,9 @@ impl<'a> MorseComplex<'a> {
 
     pub fn get_persistence(&self, kind: MorseKind) -> Option<HashMap<NodeIndex, f64>> {
         let mut result = HashMap::with_capacity(self.ordered_points.len());
+        let inverse_lookup: HashMap<NodeIndex, usize> = ordered_points.iter().enumerate()
+            .map(|x| (x.1.node, x.0))
+            .collect();
         for morse_node in self.ordered_points.iter() {
             if let Some(data) = morse_node.get_data(kind) {
                 result.insert(morse_node.node, data.lifetime);
@@ -312,7 +330,7 @@ mod tests {
 
     #[test]
     fn test_single() {
-        let mut graph = Graph::new_undirected();
+        let mut graph = UnGraph::new_undirected();
         let points = [
             LabeledPoint{id: 0, value: -1., point: vec![0., 0.]},
             LabeledPoint{id: 1, value: 1., point: vec![1., 0.]},
@@ -334,7 +352,7 @@ mod tests {
 
     #[test]
     fn test_triangle() {
-        let mut graph = Graph::new_undirected();
+        let mut graph = UnGraph::new_undirected();
         let points = [
             LabeledPoint{id: 0, value: -1., point: vec![0., 0.]},
             LabeledPoint{id: 1, value: 0., point: vec![1., 1.]},
@@ -360,7 +378,7 @@ mod tests {
 
     #[test]
     fn test_square() {
-        let mut graph = Graph::new_undirected();
+        let mut graph = UnGraph::new_undirected();
         let points = [
             LabeledPoint{id: 0, value: 1., point: vec![0., 0.]},
             LabeledPoint{id: 1, value: -1., point: vec![1., 0.]},
@@ -389,7 +407,7 @@ mod tests {
 
     #[test]
     fn test_all_equal_values() {
-        let mut graph = Graph::new_undirected();
+        let mut graph = UnGraph::new_undirected();
         let points = [
             LabeledPoint{id: 0, value: 0., point: vec![0., 0.]},
             LabeledPoint{id: 1, value: 0., point: vec![1., 0.]},
@@ -422,7 +440,7 @@ mod tests {
 
     #[test]
     fn test_big_square() {
-        let mut graph = Graph::new_undirected();
+        let mut graph = UnGraph::new_undirected();
         let points = [
             LabeledPoint{id: 0, value: 6., point: vec![0., 0.]},
             LabeledPoint{id: 1, value: 2., point: vec![1., 0.]},
@@ -469,7 +487,7 @@ mod tests {
 
     #[test]
     fn test_filtration() {
-        let mut graph = Graph::new_undirected();
+        let mut graph = UnGraph::new_undirected();
         let points = [
             LabeledPoint{id: 0, value: 3., point: vec![0., 0.]},
             LabeledPoint{id: 1, value: -1., point: vec![1., 0.]},
