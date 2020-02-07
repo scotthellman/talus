@@ -309,7 +309,6 @@ impl<'a> MorseComplex<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ndarray::prelude::*;
 
     #[test]
     fn test_single() {
@@ -403,11 +402,11 @@ mod tests {
             let node = graph.add_node(point.to_owned());
             node_lookup.push(node);
         }
-        graph.add_edge(node_lookup[0], node_lookup[1], 0.);
-        graph.add_edge(node_lookup[0], node_lookup[2], 0.);
-        graph.add_edge(node_lookup[1], node_lookup[3], 0.);
-        graph.add_edge(node_lookup[2], node_lookup[3], 0.);
-        graph.add_edge(node_lookup[2], node_lookup[4], 0.);
+        graph.add_edge(node_lookup[0], node_lookup[1], 1.);
+        graph.add_edge(node_lookup[0], node_lookup[2], 1.);
+        graph.add_edge(node_lookup[1], node_lookup[3], 1.);
+        graph.add_edge(node_lookup[2], node_lookup[3], 1.);
+        graph.add_edge(node_lookup[2], node_lookup[4], 1.);
         let mut complex = MorseComplex::from_graph(&mut graph);
         let lifetimes = complex
             .compute_morse_complex(MorseKind::Descending)

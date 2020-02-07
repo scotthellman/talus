@@ -9,7 +9,6 @@ repository = "https://github.com/scotthellman/talus"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ndarray = "0.13.0"
 petgraph = "0.5.0"
 itertools = "0.8.2"
 csv = "1.1"
