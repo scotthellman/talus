@@ -29,14 +29,9 @@ fn approximate_knn_persistence_py(py: Python, points: PyList, k: usize, sample_r
     for point in points.iter(py) {
         labeled_points.push(point.extract(py)?);
     }
-    println!("about to build the graph");
-    let mut g = graph::build_knn_approximate(&labeled_points, k, sample_rate, precision);
-    println!("built");
-    let mut complex = morse::MorseComplex::from_graph(&mut g);
-    let lifetimes = complex
-        .compute_morse_complex(morse::MorseKind::Descending)
-        .get_persistence(morse::MorseKind::Descending)
-        .expect("couldn't get lifetimes");
+    let g = graph::build_knn_approximate(&labeled_points, k, sample_rate, precision);
+    let complex = morse::MorseSmaleComplex::from_graph(&g);
+    let lifetimes = complex.descending_complex.get_persistence().expect("couldn't get lifetimes");
     let lifetimes: HashMap<i64, f64> = lifetimes.iter()
         .map(|(k,v)| {
             let id = g.node_weight(*k).unwrap().id;
@@ -51,14 +46,9 @@ fn knn_persistence_py(py: Python, points: PyList, k: usize) -> PyResult<PyDict> 
     for point in points.iter(py) {
         labeled_points.push(point.extract(py)?);
     }
-    println!("about to build the graph");
-    let mut g = graph::build_knn(&labeled_points, k);
-    println!("built");
-    let mut complex = morse::MorseComplex::from_graph(&mut g);
-    let lifetimes = complex
-        .compute_morse_complex(morse::MorseKind::Descending)
-        .get_persistence(morse::MorseKind::Descending)
-        .expect("couldn't get lifetimes");
+    let g = graph::build_knn(&labeled_points, k);
+    let complex = morse::MorseSmaleComplex::from_graph(&g);
+    let lifetimes = complex.descending_complex.get_persistence().expect("couldn't get lifetimes");
     let lifetimes: HashMap<i64, f64> = lifetimes.iter()
         .map(|(k,v)| {
             let id = g.node_weight(*k).unwrap().id;
@@ -84,13 +74,9 @@ fn persistence_py(py: Python, nodes: PyList, edges: PyList) -> PyResult<(PyDict,
         let right: i64 = node_tuple.get_item(py, 1).extract(py)?;
         g.add_edge((id_lookup.get(&left).unwrap()).1, id_lookup.get(&right).unwrap().1, 1.);
     }
-    let mut complex = morse::MorseComplex::from_graph(&mut g);
-    let lifetimes = complex
-        .compute_morse_complex(morse::MorseKind::Descending)
-        .get_persistence(morse::MorseKind::Descending)
-        .expect("couldn't get lifetimes");
-    let filtration = complex.get_filtration(morse::MorseKind::Descending);
-    let complex = complex.get_complex(morse::MorseKind::Descending);
+    let complex = morse::MorseSmaleComplex::from_graph(&g);
+    let lifetimes = complex.descending_complex.get_persistence().expect("couldn't get lifetimes");
+    let filtration = complex.descending_complex.filtration.as_ref().expect("no filtration?");
     let lifetimes: HashMap<i64, f64> = lifetimes.iter()
         .map(|(k,v)| {
             let id = g.node_weight(*k).unwrap().id;
@@ -98,11 +84,11 @@ fn persistence_py(py: Python, nodes: PyList, edges: PyList) -> PyResult<(PyDict,
         })
         .collect();
     let filtration: Vec<(f64, i64, i64)> = filtration.iter()
-        .map(|(lifetime, node, parent)| {
-            (*lifetime, g.node_weight(*node).unwrap().id, g.node_weight(*parent).unwrap().id)
+        .map(|filtration| {
+            (filtration.time, g.node_weight(filtration.destroyed_cell).unwrap().id, g.node_weight(filtration.owning_cell).unwrap().id)
         })
         .collect();
-    let complex: Vec<(i64, i64)> = complex.iter()
+    let complex: Vec<(i64, i64)> = complex.descending_complex.get_complex().iter()
         .map(|(node, ancestor)| {
             (g.node_weight(*node).unwrap().id, g.node_weight(*ancestor).unwrap().id)
         })
