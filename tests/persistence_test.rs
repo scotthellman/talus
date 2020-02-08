@@ -15,12 +15,9 @@ fn continental_divide_test() {
     expected.insert(0, f64::INFINITY);
     expected.insert(1, 560.);
     expected.insert(2, 827.);
-    let mut graph = talus::graph::build_knn(&points, 5);
-    let mut complex = talus::morse::MorseComplex::from_graph(&mut graph);
-    let lifetimes = complex
-        .compute_morse_complex(talus::morse::MorseKind::Descending)
-        .get_persistence(talus::morse::MorseKind::Descending)
-        .expect("couldn't get lifetimes");
+    let graph = talus::graph::build_knn(&points, 5);
+    let complex = talus::morse::MorseSmaleComplex::from_graph(&graph);
+    let lifetimes = complex.descending_complex.get_persistence().unwrap();
     lifetimes.iter()
         .map(|(node, lifetime)| (graph.node_weight(*node).unwrap().id, lifetime))
         .filter(|(id, _)| expected.contains_key(id))
