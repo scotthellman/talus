@@ -34,7 +34,6 @@ class MorseSmaleData:
 class MorseData:
 
     def __init__(self, rust_output):
-        print(rust_output)
         self.lifetimes = rust_output[0]
         self.filtration = [MorseFiltrationStep(*f) for f in rust_output[1]]
         self.assignments = {a[0]: a[1] for a in rust_output[2]}
