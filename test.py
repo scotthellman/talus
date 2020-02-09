@@ -17,24 +17,10 @@ G.add_edge(nodes[3], nodes[4])
 print(G.nodes)
 print(G.edges)
 
-(result, filtration, morse) = morse.persistence(G)
+result = morse.persistence(G)
 
 print(result)
-print(filtration)
-print(morse)
 
-crystals = {k: [] for k, v in result.items() if v > 0}
-
-for node in morse:
-    crystals[node[1]].append(node[0])
-
-print("Full morse complex:")
-print(crystals)
-print("-" * 10)
-
-for time, destroyed, parent in filtration:
-    crystals[parent].extend(crystals[destroyed])
-    del crystals[destroyed]
-    print("At lifetime", time)
-    print(crystals)
-    print("-" * 10)
+print(result.descending_complex.compute_cells_at_lifetime(0))
+for f in result.descending_complex.filtration:
+    print(result.descending_complex.compute_cells_at_lifetime(f.lifetime))
