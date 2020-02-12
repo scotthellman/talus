@@ -1,3 +1,7 @@
+//! Talus
+//! =====
+//!
+//! A collection of computational topology algorithms written in Rust, with Python bindings.
 use std::fs::File;
 use std::f64;
 use std::error::Error;
@@ -70,6 +74,7 @@ fn persistence_py(py: Python, nodes: PyList, edges: PyList) -> PyResult<PyTuple>
 
 // FIXME: still need more types here
 // ALSO FIXME: these probably belong in morse.rs
+/// A struct that captures the important data about a MorseSmaleComplex
 struct MorseComplexData {
     lifetimes: HashMap<i64, f64>,
     filtration: Vec<(f64, i64, i64)>,
@@ -117,10 +122,23 @@ impl morse::MorseComplex {
     }
 }
 
+/// A point in a graph that contains enough information to allow for Morse complex construction
+///
+///
 #[derive(Debug)]
 pub struct LabeledPoint {
+    /// An identifier for this point. Assumed to be unique.
     pub id: i64,
+
+    /// The vector denoting the points location in some space. Used for distance computations.
     pub point: Vec<f64>,
+
+    /// The scalar value associated with this point. 
+    ///
+    /// This is the value that is used to determine extrema in the graph.
+    ///
+    /// Mathematically speaking, this corresponds to the value of some morse function at this
+    /// point.
     pub value: f64
 }
 

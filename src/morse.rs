@@ -1,3 +1,4 @@
+//! Algorithms for analyzing the behavior of a scalar function over a graph.
 use petgraph::graph::{UnGraph, NodeIndex};
 use petgraph::unionfind::UnionFind;
 
@@ -75,7 +76,21 @@ impl PointedUnionFind {
     }
 }
 
-
+/// Contains all of the filtration information for a MorseComplex
+///
+/// A Morse complex, especially one generated from discrete points of empirical data,
+/// may contain extrema that are considered spurious. The filtration of a MorseComplex
+/// provides a series of simplifications of that complex, created by merging less 
+/// persistent extrema with more persistence extrema. Taken to its conclusion, all
+/// extrema will have been merged with the global extreme.
+///
+/// The MorseFiltration struct contains the information corresponding to one
+/// step of this simplification process.
+///
+/// FIXME probably should be calleda MorseFiltrationStep then huh
+///
+/// FIXME man this shouldn't even be public
+///
 #[derive(Debug, Clone, Copy)]
 pub struct MorseFiltration {
     pub time: f64,
@@ -83,18 +98,27 @@ pub struct MorseFiltration {
     pub owning_cell: NodeIndex
 }
 
+/// Indicates whether a MorseComplex is Ascending or Descending.
+///
+/// See [MorseComplex](struct.MorseComplex.html) for a detailed explanation.
 #[derive(Debug, Clone, Copy)]
 pub enum MorseKind {
     Ascending,
     Descending
 }
 
+/// Contains both the ascending and descending morse complexes constructed
+/// from a graph.
+///
+/// See [MorseComplex](struct.MorseComplex.html) for a detailed explanation.
 pub struct MorseSmaleComplex {
     pub ascending_complex: MorseComplex,
     pub descending_complex: MorseComplex
 }
 
 impl MorseSmaleComplex {
+
+    /// Constructs a MorseSmaleComplex from the given graph.
     pub fn from_graph(graph: &UnGraph<LabeledPoint, f64>) -> MorseSmaleComplex {
         let ascending_complex = MorseComplex::from_graph(MorseKind::Ascending, &graph);
         let descending_complex = MorseComplex::from_graph(MorseKind::Descending, &graph);
@@ -103,10 +127,28 @@ impl MorseSmaleComplex {
     }
 }
 
+/// The Morse complex constructed from a graph.
+///
+/// A Morse complex is, functionally, a partition of a graph into regions
+/// belongs to the various extrema of the graph. For a _descending_ Morse complex,
+/// the partitions correspond to maxima, while for an _ascending_ Morse complex,
+/// the partitions correspond to minima.
+///
+/// Computing the Morse complex of a graph necessarily involves computing the
+/// _persistence_ of the extrema in the graph. This persistence value is 
+/// essentially a quantification of how topologically important that extrema
+/// is in the graph, with more "important" extrema having higher persistence.
+///
+/// The partitions can then be combined with the persistence values to create a 
+/// sequence of simplifications of the complex. This is known as a filtration
+/// sequence. When computing the filtration sequence, the partitions are merged
+/// according to their extrema's persistence, starting with the least persistent
+/// partition. 
+///
 pub struct MorseComplex {
     ordered_points: Vec<MorseNode>,
     cells: PointedUnionFind,
-    pub filtration: Option<Vec<MorseFiltration>>,
+    pub filtration: Option<Vec<MorseFiltration>>, //FIXME: no real reason for this to be an option
     kind: MorseKind
 }
 
@@ -133,7 +175,7 @@ impl MorseComplex {
         nodes.iter().enumerate().map(|(_, n)| MorseNode::new(*n)).collect()
     }
 
-    pub fn compute_filtration(&self) -> Vec<MorseFiltration> {
+    fn compute_filtration(&self) -> Vec<MorseFiltration> {
         let mut filtration = self.ordered_points.iter() 
             // FIXME: get rid of this unwrap
             .filter_map(|point| {
@@ -149,7 +191,10 @@ impl MorseComplex {
         filtration
     }
 
+    /// Returns a list of (NodeIndex, ParentIndex) tuples that define the Morse cell assignments
     pub fn get_complex(&self) -> Vec<(NodeIndex, NodeIndex)> {
+        // FIXME: if this is really a function I need, I should make a type alias for (nodeindex,
+        // nodeindex)
         self.ordered_points.iter() 
             // FIXME: get rid of this unwrap
             .map(|point| {
@@ -159,7 +204,12 @@ impl MorseComplex {
              .collect()
     }
 
+    /// Returns a mapping of NodeIndices to persistence values.
+    ///
+    /// Note that, by definition, global extrema have infinite persistence, and non-extrema have 0
+    /// persistence
     pub fn get_persistence(&self) -> Option<HashMap<NodeIndex, f64>> {
+        // FIXME: this is an option because...?
         let mut result = HashMap::with_capacity(self.ordered_points.len());
         for morse_node in self.ordered_points.iter() {
             if let Some(data) = &morse_node.data {
@@ -171,7 +221,7 @@ impl MorseComplex {
         Some(result)
     }
 
-    pub fn construct_complex(&mut self, graph: &UnGraph<LabeledPoint, f64>) -> &Self{
+    fn construct_complex(&mut self, graph: &UnGraph<LabeledPoint, f64>) -> &Self{
         // We iterate through the points in descending order, which means we are
         // essentially building the morse complex at the same time that we compute
         // persistence.

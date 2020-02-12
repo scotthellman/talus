@@ -1,3 +1,4 @@
+//! Algorithms for constructing graphs from sets of points
 use std::hash::{Hash, Hasher};
 use petgraph::graph::Graph;
 use kdtree::KdTree;
@@ -117,6 +118,22 @@ fn rejection_sample(count: usize, range: usize, rng: &mut ThreadRng) -> Vec<usiz
     sample.iter().copied().collect()
 }
 
+// FIXME: the ungraph fairy hasn't visited this file yet
+
+/// Constructs an approximate `k`-NN graph from a set of `points`.
+///
+/// `sample_rate` controls how many new neighbors are considered at each step. Lower values will
+/// reduce runtime but reduce accuracy.
+///
+/// `precision` controls early stopping of the computation. Lower values will increase runtime
+/// but increase accuracy.
+///
+/// This is an implementation of the algoirhtm described in [Efficient K-Nearest Neighbor Graph
+/// Construction for Generic Similarity
+/// Measures](https://www.cs.princeton.edu/cass/papers/www11.pdf). How much faster this is than the
+/// equivalent exact kNN computation depends on how slow the similarity function is to evaluate.
+/// For very fast distance calculations, this can be slower than the exact computation.
+/// Note that this _does not_ require the similarity function to be a distance metric.
 pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64, precision: f64) 
     -> Graph<LabeledPoint, f64, petgraph::Undirected> {
     // https://www.cs.princeton.edu/cass/papers/www11.pdf
@@ -190,6 +207,9 @@ fn graph_from_neighbordata(points: &[LabeledPoint], neighbors: Vec<Vec<NeighborD
 }
 
 
+/// Constructs an exact `k`-NN graph from a set of `points`.
+///
+/// This implementation uses a KD-tree for efficient nearest neighbor querying.
 pub fn build_knn(points: &[LabeledPoint], k: usize) -> Graph<LabeledPoint, f64, petgraph::Undirected> {
     let dim = points[0].point.len();
     let mut tree = KdTree::new(dim);
