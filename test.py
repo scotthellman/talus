@@ -24,3 +24,7 @@ print(result)
 print(result.descending_complex.compute_cells_at_lifetime(0))
 for f in result.descending_complex.filtration:
     print(result.descending_complex.compute_cells_at_lifetime(f.lifetime))
+
+print(result.ascending_complex.compute_cells_at_lifetime(0))
+for f in result.ascending_complex.filtration:
+    print(result.ascending_complex.compute_cells_at_lifetime(f.lifetime))
