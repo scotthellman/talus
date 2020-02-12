@@ -84,15 +84,10 @@ impl PointedUnionFind {
 /// persistent extrema with more persistence extrema. Taken to its conclusion, all
 /// extrema will have been merged with the global extreme.
 ///
-/// The MorseFiltration struct contains the information corresponding to one
+/// The MorseFiltrationStep struct contains the information corresponding to one
 /// step of this simplification process.
-///
-/// FIXME probably should be calleda MorseFiltrationStep then huh
-///
-/// FIXME man this shouldn't even be public
-///
 #[derive(Debug, Clone, Copy)]
-pub struct MorseFiltration {
+pub struct MorseFiltrationStep {
     pub time: f64,
     pub destroyed_cell: NodeIndex,
     pub owning_cell: NodeIndex
@@ -148,7 +143,7 @@ impl MorseSmaleComplex {
 pub struct MorseComplex {
     ordered_points: Vec<MorseNode>,
     cells: PointedUnionFind,
-    pub filtration: Option<Vec<MorseFiltration>>, //FIXME: no real reason for this to be an option
+    pub filtration: Option<Vec<MorseFiltrationStep>>, //FIXME: no real reason for this to be an option
     kind: MorseKind
 }
 
@@ -175,13 +170,13 @@ impl MorseComplex {
         nodes.iter().enumerate().map(|(_, n)| MorseNode::new(*n)).collect()
     }
 
-    fn compute_filtration(&self) -> Vec<MorseFiltration> {
+    fn compute_filtration(&self) -> Vec<MorseFiltrationStep> {
         let mut filtration = self.ordered_points.iter() 
             // FIXME: get rid of this unwrap
             .filter_map(|point| {
                 let data = point.data.as_ref().unwrap();
                 if let Some(parent) = data.merge_parent {
-                    Some(MorseFiltration{time: data.lifetime, destroyed_cell: point.node, owning_cell: parent})
+                    Some(MorseFiltrationStep{time: data.lifetime, destroyed_cell: point.node, owning_cell: parent})
                 } else {
                     None
                 }
