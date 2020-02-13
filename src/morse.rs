@@ -143,7 +143,7 @@ impl MorseSmaleComplex {
 pub struct MorseComplex {
     ordered_points: Vec<MorseNode>,
     cells: PointedUnionFind,
-    pub filtration: Option<Vec<MorseFiltrationStep>>, //FIXME: no real reason for this to be an option
+    pub filtration: Vec<MorseFiltrationStep>,
     kind: MorseKind
 }
 
@@ -152,7 +152,7 @@ impl MorseComplex {
         let ordered_points = MorseComplex::get_ordered_points(kind, &graph);
         let num_points = ordered_points.len();
         let cells = PointedUnionFind::new(num_points);
-        let mut complex = MorseComplex{kind, ordered_points, cells, filtration: None};
+        let mut complex = MorseComplex{kind, ordered_points, cells, filtration: vec![]};
         complex.construct_complex(graph);
         complex
     }
@@ -172,13 +172,16 @@ impl MorseComplex {
 
     fn compute_filtration(&self) -> Vec<MorseFiltrationStep> {
         let mut filtration = self.ordered_points.iter() 
-            // FIXME: get rid of this unwrap
             .filter_map(|point| {
-                let data = point.data.as_ref().unwrap();
-                if let Some(parent) = data.merge_parent {
-                    Some(MorseFiltrationStep{time: data.lifetime, destroyed_cell: point.node, owning_cell: parent})
-                } else {
-                    None
+                match point.data.as_ref() {
+                    Some(data) => {
+                        if let Some(parent) = data.merge_parent {
+                            Some(MorseFiltrationStep{time: data.lifetime, destroyed_cell: point.node, owning_cell: parent})
+                        } else {
+                            None
+                        }
+                    }
+                    None => None
                 }
              })
              .collect::<Vec<_>>();
@@ -186,15 +189,14 @@ impl MorseComplex {
         filtration
     }
 
-    /// Returns a list of (NodeIndex, ParentIndex) tuples that define the Morse cell assignments
-    pub fn get_complex(&self) -> Vec<(NodeIndex, NodeIndex)> {
-        // FIXME: if this is really a function I need, I should make a type alias for (nodeindex,
-        // nodeindex)
+    /// Returns a HashMap mapping nodex to their Morse cell extrema
+    pub fn get_complex(&self) -> HashMap<NodeIndex, NodeIndex> {
         self.ordered_points.iter() 
-            // FIXME: get rid of this unwrap
-            .map(|point| {
-                let data = point.data.as_ref().unwrap();
-                (point.node, data.ancestor)
+            .filter_map(|point| {
+                match point.data.as_ref() {
+                    Some(data) => Some((point.node, data.ancestor)),
+                    None => None
+                }
              })
              .collect()
     }
@@ -203,23 +205,20 @@ impl MorseComplex {
     ///
     /// Note that, by definition, global extrema have infinite persistence, and non-extrema have 0
     /// persistence
-    pub fn get_persistence(&self) -> Option<HashMap<NodeIndex, f64>> {
-        // FIXME: this is an option because...?
+    pub fn get_persistence(&self) -> HashMap<NodeIndex, f64> {
         let mut result = HashMap::with_capacity(self.ordered_points.len());
         for morse_node in self.ordered_points.iter() {
             if let Some(data) = &morse_node.data {
                 result.insert(morse_node.node, data.lifetime);
-            } else{
-                return None;
-            }
+            }         
         }
-        Some(result)
+        result
     }
 
     fn construct_complex(&mut self, graph: &UnGraph<LabeledPoint, f64>) -> &Self{
-        // We iterate through the points in descending order, which means we are
-        // essentially building the morse complex at the same time that we compute
-        // persistence.
+        // We iterate through the points in descending (or ascending, depends on self.kind) 
+        // order, which means we are essentially building the morse complex at the same time
+        // that we compute persistence.
 
         let inverse_lookup: HashMap<NodeIndex, usize> = self.ordered_points.iter().enumerate()
             .map(|x| (x.1.node, x.0))
@@ -241,7 +240,7 @@ impl MorseComplex {
             // Nothing to do if we have no neighbors, but if we do then we
             // have to merge the correspond morse crystals
             let lifetime = if higher_indices.is_empty () {
-                f64::INFINITY  // FIXME: don't really like handling lifetimes this way
+                f64::INFINITY  
             } else {
                 0.
             };
@@ -250,7 +249,7 @@ impl MorseComplex {
             // this is not a maximum so it has no lifetime
             self.ordered_points[i].data = Some(MorseData{lifetime, ancestor, merge_parent: None});
         }
-        self.filtration = Some(self.compute_filtration());
+        self.filtration = self.compute_filtration();
         self
     }
 
@@ -506,7 +505,7 @@ mod tests {
         assert_eq!(lifetimes[&node_lookup[3]], 0.);
         assert_eq!(lifetimes[&node_lookup[4]], 8.);
 
-        let filtration = complex.filtration.unwrap();
+        let filtration = complex.filtration;
         let expected = [(1., node_lookup[0], node_lookup[4]), (8., node_lookup[4], node_lookup[2])];
         for (actual, expected) in filtration.iter().zip(expected.iter()) {
             assert_eq!(actual.time, expected.0);
