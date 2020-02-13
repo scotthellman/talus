@@ -100,7 +100,7 @@ impl morse::MorseSmaleComplex {
 
 impl morse::MorseComplex {
     fn to_data(&self, graph: &UnGraph<LabeledPoint, f64>) -> MorseComplexData {
-        let lifetimes = self.get_persistence().expect("couldn't get lifetimes");
+        let lifetimes = self.get_persistence();
         let filtration = &self.filtration;
         let lifetimes: HashMap<i64, f64> = lifetimes.iter()
             .map(|(k,v)| {
