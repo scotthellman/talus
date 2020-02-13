@@ -1,6 +1,6 @@
 //! Algorithms for constructing graphs from sets of points
 use std::hash::{Hash, Hasher};
-use petgraph::graph::Graph;
+use petgraph::graph::UnGraph;
 use kdtree::KdTree;
 use kdtree::distance::squared_euclidean;
 use std::collections::HashSet;
@@ -47,7 +47,7 @@ impl Eq for NeighborData {}
 
 
 fn sample_neighbors(neighbors: &mut Vec<NeighborData>, sample_rate: f64) -> HashSet<NeighborData> {
-    let mut rng = rand::thread_rng(); //FIXME: This should probably be threaded through the call
+    let mut rng = rand::thread_rng();
     let mut targets = HashSet::with_capacity(neighbors.len());
     for neighbor in neighbors.iter_mut() {
         match neighbor.state {
@@ -118,7 +118,6 @@ fn rejection_sample(count: usize, range: usize, rng: &mut ThreadRng) -> Vec<usiz
     sample.iter().copied().collect()
 }
 
-// FIXME: the ungraph fairy hasn't visited this file yet
 
 /// Constructs an approximate `k`-NN graph from a set of `points`.
 ///
@@ -135,11 +134,10 @@ fn rejection_sample(count: usize, range: usize, rng: &mut ThreadRng) -> Vec<usiz
 /// For very fast distance calculations, this can be slower than the exact computation.
 /// Note that this _does not_ require the similarity function to be a distance metric.
 pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64, precision: f64) 
-    -> Graph<LabeledPoint, f64, petgraph::Undirected> {
+    -> UnGraph<LabeledPoint, f64> {
     // https://www.cs.princeton.edu/cass/papers/www11.pdf
 
     let mut rng = rand::thread_rng();
-    // This should be a vector of heaps, but rust's heap won't quite do it so
     let mut approximate_neighbors: Vec<Vec<NeighborData>> = (0..points.len())
         .map(|_| {
             let points = rejection_sample(k, points.len(), &mut rng);
@@ -153,7 +151,8 @@ pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64
     while !done {
         iters += 1;
         // I'm making targets be a vec of hashsets
-        // because redudnant targets is a very real possibility and i need an O(1) solution to it
+        // because redudnant targets is a very real possibility and i need an efficient solution
+        // to account for those
         let mut targets: Vec<HashSet<NeighborData>> = approximate_neighbors.iter_mut()
             .map(|neighbors| sample_neighbors(neighbors, sample_rate))
             .collect();
@@ -165,7 +164,6 @@ pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64
             for (i, target) in targ.iter().enumerate() {
                 if let NeighborState::New = target.state {
                     for (j, other) in targ.iter().enumerate() {
-                        // FIXME: does this need to be inverted for ascending
                         if j < i || !other.state.is_new() {
                             let distance = points[target.idx].distance(&points[other.idx]);
                             let changed = update_neighbors(&mut approximate_neighbors[target.idx], target.idx, other.idx, distance, k);
@@ -181,6 +179,8 @@ pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64
         done = counter <= (precision * points.len() as f64 * k as f64) as i64;
         if iters > 2000 {
             // FIXME: This should probably be more graceful than full-on panicking 
+            // TODO: A timeout would be nice - there's a perfectly usable graph at every step after
+            // all
             panic!();
         }
     }
@@ -189,8 +189,8 @@ pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64
 }
 
 fn graph_from_neighbordata(points: &[LabeledPoint], neighbors: Vec<Vec<NeighborData>>)
-    -> Graph<LabeledPoint, f64, petgraph::Undirected> {
-    let mut neighbor_graph = Graph::new_undirected();
+    -> UnGraph<LabeledPoint, f64> {
+    let mut neighbor_graph = UnGraph::new_undirected();
     let mut node_lookup = Vec::with_capacity(points.len());
     for point in points {
         let node = neighbor_graph.add_node(point.to_owned());
@@ -210,13 +210,13 @@ fn graph_from_neighbordata(points: &[LabeledPoint], neighbors: Vec<Vec<NeighborD
 /// Constructs an exact `k`-NN graph from a set of `points`.
 ///
 /// This implementation uses a KD-tree for efficient nearest neighbor querying.
-pub fn build_knn(points: &[LabeledPoint], k: usize) -> Graph<LabeledPoint, f64, petgraph::Undirected> {
+pub fn build_knn(points: &[LabeledPoint], k: usize) -> UnGraph<LabeledPoint, f64> {
     let dim = points[0].point.len();
     let mut tree = KdTree::new(dim);
     for (i, point) in points.iter().enumerate() {
         tree.add(&point.point, i).unwrap();
     }
-    let mut neighbor_graph = Graph::new_undirected();
+    let mut neighbor_graph = UnGraph::new_undirected();
     let mut node_lookup = Vec::with_capacity(points.len());
     for point in points {
         let node = neighbor_graph.add_node(point.to_owned());
