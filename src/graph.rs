@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::f64;
 use rand::prelude::*;
 
-use super::{Metric, PreMetric, LabeledPoint};
+use super::{PreMetric, LabeledPoint};
 
 #[derive(Debug, Clone, Copy)]
 enum NeighborState {
@@ -206,11 +206,10 @@ fn graph_from_neighbordata<T: PreMetric + Clone>(points: &[LabeledPoint<T>], nei
     neighbor_graph
 }
 
-
-// Getting this to work generically with kdtree is going to be rough
 /// Constructs an exact `k`-NN graph from a set of `points`.
 ///
-/// This implementation uses a KD-tree for efficient nearest neighbor querying.
+/// This implementation uses a KD-tree for efficient nearest neighbor querying. This means that it
+/// only works for vectors of real numbers, and can only use the Euclidean metric.
 pub fn build_knn(points: &[LabeledPoint<Vec<f64>>], k: usize) -> UnGraph<LabeledPoint<Vec<f64>>, f64> {
     let dim = points[0].point.len();
     let mut tree = KdTree::new(dim);

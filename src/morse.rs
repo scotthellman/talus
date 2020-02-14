@@ -120,6 +120,10 @@ impl MorseSmaleComplex {
 
         MorseSmaleComplex{ascending_complex, descending_complex}
     }
+
+    pub fn to_data<T>(&self, graph: &UnGraph<LabeledPoint<T>, f64>) -> (MorseComplexData, MorseComplexData) {
+        (self.descending_complex.to_data(graph), self.ascending_complex.to_data(graph))
+    }
 }
 
 /// The Morse complex constructed from a graph.
@@ -155,6 +159,28 @@ impl MorseComplex {
         let mut complex = MorseComplex{kind, ordered_points, cells, filtration: vec![]};
         complex.construct_complex(graph);
         complex
+    }
+
+    pub fn to_data<T>(&self, graph: &UnGraph<LabeledPoint<T>, f64>) -> MorseComplexData {
+        let lifetimes = self.get_persistence();
+        let filtration = &self.filtration;
+        let lifetimes: HashMap<i64, f64> = lifetimes.iter()
+            .map(|(k,v)| {
+                let id = graph.node_weight(*k).unwrap().id;
+                (id, *v)
+            })
+            .collect();
+        let filtration: Vec<(f64, i64, i64)> = filtration.iter()
+            .map(|filtration| {
+                (filtration.time, graph.node_weight(filtration.destroyed_cell).unwrap().id, graph.node_weight(filtration.owning_cell).unwrap().id)
+            })
+            .collect();
+        let complex: Vec<(i64, i64)> = self.get_complex().iter()
+            .map(|(node, ancestor)| {
+                (graph.node_weight(*node).unwrap().id, graph.node_weight(*ancestor).unwrap().id)
+            })
+            .collect();
+        MorseComplexData{lifetimes, filtration, complex}
     }
 
     fn get_ordered_points<T>(kind: MorseKind, graph: &UnGraph<LabeledPoint<T>, f64>) -> Vec<MorseNode> {
@@ -288,7 +314,12 @@ impl MorseComplex {
                 let value = graph.node_weight(node.node).expect("max wasn't in the graph").value;
                 (value, idx)
             })
-            .max_by(|a, b| a.0.partial_cmp(&b.0).expect("Nan in the values"))
+            .max_by(|a, b| match self.kind {
+                //TODO: would be nice to pull this logic out
+                    MorseKind::Descending => a.0.partial_cmp(&b.0).expect("Nan in the values"),
+                    MorseKind::Ascending => b.0.partial_cmp(&a.0).expect("Nan in the values")
+                }
+            )
             .expect("No maximum was found, somehow?");
 
         let joining_node = &self.ordered_points[ordered_index];
@@ -301,12 +332,14 @@ impl MorseComplex {
                 // unwrap_or here because the persistence calculation is still meaningful
                 // even we we aren't in a metric space, so lack of grade information shouldn't
                 // block the computation
+                // FIXME: i'm not sure that i entirely believe the above comment
                 (value / *graph.edge_weight(edge).unwrap_or(&1.), idx)
             })
             .max_by(|a, b| match self.kind {
-                MorseKind::Descending => a.0.partial_cmp(&b.0).expect("Nan in the values"),
-                MorseKind::Ascending => b.0.partial_cmp(&a.0).expect("Nan in the values")
-            })
+                    MorseKind::Descending => a.0.partial_cmp(&b.0).expect("Nan in the values"),
+                    MorseKind::Ascending => b.0.partial_cmp(&a.0).expect("Nan in the values")
+                }
+            )
             .expect("No steepest neighbor was found, somehow?");
 
         // now we need to update the lifetimes and merge the other crystals
@@ -329,6 +362,16 @@ impl MorseComplex {
         self.ordered_points[steepest_neighbor].data.as_ref().expect("steepest neighbor had no data").ancestor
     }
 }
+//
+// FIXME: still need more types here
+/// A struct that captures the important data about a MorseSmaleComplex
+pub struct MorseComplexData {
+    pub lifetimes: HashMap<i64, f64>,
+    pub filtration: Vec<(f64, i64, i64)>,
+    pub complex: Vec<(i64, i64)>
+}
+
+
 
 #[cfg(test)]
 mod tests {
@@ -433,7 +476,7 @@ mod tests {
     }
 
     #[test]
-    fn test_big_square() {
+    fn test_big_square_morse_smale() {
         let mut graph = UnGraph::new_undirected();
         let points = [
             LabeledPoint{id: 0, value: 6., point: vec![0., 0.]},
@@ -451,20 +494,20 @@ mod tests {
             let node = graph.add_node(point.to_owned());
             node_lookup.push(node);
         }
-        graph.add_edge(node_lookup[0], node_lookup[1], 0.);
-        graph.add_edge(node_lookup[1], node_lookup[2], 0.);
-        graph.add_edge(node_lookup[0], node_lookup[3], 0.);
-        graph.add_edge(node_lookup[1], node_lookup[4], 0.);
-        graph.add_edge(node_lookup[2], node_lookup[5], 0.);
-        graph.add_edge(node_lookup[3], node_lookup[4], 0.);
-        graph.add_edge(node_lookup[4], node_lookup[5], 0.);
-        graph.add_edge(node_lookup[3], node_lookup[6], 0.);
-        graph.add_edge(node_lookup[4], node_lookup[7], 0.);
-        graph.add_edge(node_lookup[5], node_lookup[8], 0.);
-        graph.add_edge(node_lookup[6], node_lookup[7], 0.);
-        graph.add_edge(node_lookup[7], node_lookup[8], 0.);
-        let complex = MorseComplex::from_graph(MorseKind::Descending, &graph);
-        let lifetimes = complex.get_persistence();
+        graph.add_edge(node_lookup[0], node_lookup[1], 1.);
+        graph.add_edge(node_lookup[1], node_lookup[2], 1.);
+        graph.add_edge(node_lookup[0], node_lookup[3], 1.);
+        graph.add_edge(node_lookup[1], node_lookup[4], 1.);
+        graph.add_edge(node_lookup[2], node_lookup[5], 1.);
+        graph.add_edge(node_lookup[3], node_lookup[4], 1.);
+        graph.add_edge(node_lookup[4], node_lookup[5], 1.);
+        graph.add_edge(node_lookup[3], node_lookup[6], 1.);
+        graph.add_edge(node_lookup[4], node_lookup[7], 1.);
+        graph.add_edge(node_lookup[5], node_lookup[8], 1.);
+        graph.add_edge(node_lookup[6], node_lookup[7], 1.);
+        graph.add_edge(node_lookup[7], node_lookup[8], 1.);
+        let complex = MorseSmaleComplex::from_graph(&graph);
+        let lifetimes = complex.descending_complex.get_persistence();
         assert_eq!(lifetimes[&node_lookup[0]], 5.);
         assert_eq!(lifetimes[&node_lookup[1]], 0.);
         assert_eq!(lifetimes[&node_lookup[2]], 1.);
@@ -474,6 +517,18 @@ mod tests {
         assert_eq!(lifetimes[&node_lookup[6]], 0.);
         assert_eq!(lifetimes[&node_lookup[7]], 0.);
         assert_eq!(lifetimes[&node_lookup[8]], f64::INFINITY);
+
+        let lifetimes = complex.ascending_complex.get_persistence();
+        println!("{:?}", lifetimes);
+        assert_eq!(lifetimes[&node_lookup[0]], 0.);
+        assert_eq!(lifetimes[&node_lookup[1]], 1.);
+        assert_eq!(lifetimes[&node_lookup[2]], 0.);
+        assert_eq!(lifetimes[&node_lookup[3]], 0.);
+        assert_eq!(lifetimes[&node_lookup[4]], 0.);
+        assert_eq!(lifetimes[&node_lookup[5]], f64::INFINITY);
+        assert_eq!(lifetimes[&node_lookup[6]], 4.);
+        assert_eq!(lifetimes[&node_lookup[7]], 0.);
+        assert_eq!(lifetimes[&node_lookup[8]], 0.);
     }
 
     #[test]
