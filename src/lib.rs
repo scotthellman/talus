@@ -55,8 +55,8 @@ fn persistence_py(py: Python, nodes: PyList, edges: PyList) -> PyResult<PyTuple>
     let mut id_lookup: HashMap<i64, (usize, NodeIndex)> = HashMap::with_capacity(nodes.len(py));
     let mut g = UnGraph::new_undirected();
     for (i, node) in nodes.iter(py).enumerate() {
-        let point: LabeledPoint = node.extract(py)?;
-        let node = g.add_node(point.to_owned());
+        let point: LabeledPoint<Vec<f64>> = node.extract(py)?;
+        let node = g.add_node(point.clone());
         labeled_nodes.push(node);
         id_lookup.insert(point.id, (i, node));
     }
@@ -93,13 +93,13 @@ impl ToPyObject for MorseComplexData {
 }
 
 impl morse::MorseSmaleComplex {
-    fn to_data(&self, graph: &UnGraph<LabeledPoint, f64>) -> (MorseComplexData, MorseComplexData) {
+    fn to_data<T>(&self, graph: &UnGraph<LabeledPoint<T>, f64>) -> (MorseComplexData, MorseComplexData) {
         (self.descending_complex.to_data(graph), self.ascending_complex.to_data(graph))
     }
 }
 
 impl morse::MorseComplex {
-    fn to_data(&self, graph: &UnGraph<LabeledPoint, f64>) -> MorseComplexData {
+    fn to_data<T>(&self, graph: &UnGraph<LabeledPoint<T>, f64>) -> MorseComplexData {
         let lifetimes = self.get_persistence();
         let filtration = &self.filtration;
         let lifetimes: HashMap<i64, f64> = lifetimes.iter()
@@ -122,16 +122,38 @@ impl morse::MorseComplex {
     }
 }
 
+pub trait Metric {
+    fn distance(&self, other: &Self) -> f64;
+}
+
+impl Metric for Vec<f64> {
+    fn distance(&self, other:&Self) -> f64 {
+        self.iter().zip(other.iter())
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f64>().sqrt()
+    }
+}
+
+pub trait PreMetric {
+    fn predistance(&self, other: &Self) -> f64;
+}
+
+impl PreMetric for Vec<f64> {
+    fn predistance(&self, other:&Self) -> f64 {
+        self.distance(other)
+    }
+}
+
 /// A point in a graph that contains enough information to allow for Morse complex construction
 ///
 ///
 #[derive(Debug)]
-pub struct LabeledPoint {
+pub struct LabeledPoint<T> {
     /// An identifier for this point. Assumed to be unique.
     pub id: i64,
 
-    /// The vector denoting the points location in some space. Used for distance computations.
-    pub point: Vec<f64>,
+    /// FIXME The vector denoting the points location in some space. Used for distance computations.
+    pub point: T,
 
     /// The scalar value associated with this point. 
     ///
@@ -142,7 +164,7 @@ pub struct LabeledPoint {
     pub value: f64
 }
 
-impl<'s> FromPyObject<'s> for LabeledPoint {
+impl<'s> FromPyObject<'s> for LabeledPoint<Vec<f64>> {
     fn extract(py: Python, obj: &'s PyObject) -> PyResult<Self>{
         let id: i64 = obj.getattr(py, "identifier")?.extract(py)?;
         let value: f64 = obj.getattr(py, "value")?.extract(py)?;
@@ -156,8 +178,15 @@ impl<'s> FromPyObject<'s> for LabeledPoint {
     }
 }
 
-impl LabeledPoint {
-    pub fn from_record(record: &StringRecord) -> LabeledPoint {
+impl<T: Clone> Clone for LabeledPoint<T> {
+    fn clone(&self) -> Self {
+        LabeledPoint{value: self.value, point: self.point.clone(), id: self.id}
+    }
+}
+
+impl LabeledPoint<Vec<f64>> {
+    // FIXME: move hte vec stuff to its own impl
+    pub fn from_record(record: &StringRecord) -> LabeledPoint<Vec<f64>> {
         let id = record[0].parse::<i64>().expect("Expected an int");
         let value = record[1].parse::<f64>().expect("Expected a float");
         let point = record.iter()
@@ -167,18 +196,7 @@ impl LabeledPoint {
         LabeledPoint{id, point, value}
     }
 
-    fn distance(&self, other: &Self) -> f64 {
-        self.point.iter().zip(other.point.iter())
-            .map(|(a, b)| (a - b).powi(2))
-            .sum::<f64>().sqrt()
-    }
-
-    pub fn to_owned(&self) -> LabeledPoint {
-        // This is basically clone? I'm just copying the name from ndarray for now
-        LabeledPoint{value: self.value, point: self.point.to_owned(), id: self.id}
-    }
-
-    pub fn points_from_file<P: AsRef<Path>>(filename: P) -> Result<Vec<LabeledPoint>, Box<dyn Error>> {
+    pub fn points_from_file<P: AsRef<Path>>(filename: P) -> Result<Vec<LabeledPoint<Vec<f64>>>, Box<dyn Error>> {
         let f = File::open(filename).expect("Unable to open file");
         let f = BufReader::new(f);
         let mut points = Vec::with_capacity(16);
