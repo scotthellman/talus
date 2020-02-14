@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use std::f64;
 use rand::prelude::*;
 
-use super::LabeledPoint;
+use super::{Metric, PreMetric, LabeledPoint};
 
 #[derive(Debug, Clone, Copy)]
 enum NeighborState {
@@ -133,8 +133,8 @@ fn rejection_sample(count: usize, range: usize, rng: &mut ThreadRng) -> Vec<usiz
 /// equivalent exact kNN computation depends on how slow the similarity function is to evaluate.
 /// For very fast distance calculations, this can be slower than the exact computation.
 /// Note that this _does not_ require the similarity function to be a distance metric.
-pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64, precision: f64) 
-    -> UnGraph<LabeledPoint, f64> {
+pub fn build_knn_approximate<T: PreMetric + Clone>(points: &[LabeledPoint<T>], k: usize, sample_rate: f64, precision: f64) 
+    -> UnGraph<LabeledPoint<T>, f64> {
     // https://www.cs.princeton.edu/cass/papers/www11.pdf
 
     let mut rng = rand::thread_rng();
@@ -165,7 +165,7 @@ pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64
                 if let NeighborState::New = target.state {
                     for (j, other) in targ.iter().enumerate() {
                         if j < i || !other.state.is_new() {
-                            let distance = points[target.idx].distance(&points[other.idx]);
+                            let distance = points[target.idx].point.predistance(&points[other.idx].point);
                             let changed = update_neighbors(&mut approximate_neighbors[target.idx], target.idx, other.idx, distance, k);
                             if changed {counter += 1};
                             let changed = update_neighbors(&mut approximate_neighbors[other.idx], other.idx, target.idx, distance, k);
@@ -188,12 +188,12 @@ pub fn build_knn_approximate(points: &[LabeledPoint], k: usize, sample_rate: f64
     graph_from_neighbordata(points, approximate_neighbors)
 }
 
-fn graph_from_neighbordata(points: &[LabeledPoint], neighbors: Vec<Vec<NeighborData>>)
-    -> UnGraph<LabeledPoint, f64> {
+fn graph_from_neighbordata<T: PreMetric + Clone>(points: &[LabeledPoint<T>], neighbors: Vec<Vec<NeighborData>>)
+    -> UnGraph<LabeledPoint<T>, f64> {
     let mut neighbor_graph = UnGraph::new_undirected();
     let mut node_lookup = Vec::with_capacity(points.len());
     for point in points {
-        let node = neighbor_graph.add_node(point.to_owned());
+        let node = neighbor_graph.add_node(point.clone());
         node_lookup.push(node);
     }
 
@@ -207,10 +207,11 @@ fn graph_from_neighbordata(points: &[LabeledPoint], neighbors: Vec<Vec<NeighborD
 }
 
 
+// Getting this to work generically with kdtree is going to be rough
 /// Constructs an exact `k`-NN graph from a set of `points`.
 ///
 /// This implementation uses a KD-tree for efficient nearest neighbor querying.
-pub fn build_knn(points: &[LabeledPoint], k: usize) -> UnGraph<LabeledPoint, f64> {
+pub fn build_knn(points: &[LabeledPoint<Vec<f64>>], k: usize) -> UnGraph<LabeledPoint<Vec<f64>>, f64> {
     let dim = points[0].point.len();
     let mut tree = KdTree::new(dim);
     for (i, point) in points.iter().enumerate() {

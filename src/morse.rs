@@ -114,7 +114,7 @@ pub struct MorseSmaleComplex {
 impl MorseSmaleComplex {
 
     /// Constructs a MorseSmaleComplex from the given graph.
-    pub fn from_graph(graph: &UnGraph<LabeledPoint, f64>) -> MorseSmaleComplex {
+    pub fn from_graph<T>(graph: &UnGraph<LabeledPoint<T>, f64>) -> MorseSmaleComplex {
         let ascending_complex = MorseComplex::from_graph(MorseKind::Ascending, &graph);
         let descending_complex = MorseComplex::from_graph(MorseKind::Descending, &graph);
 
@@ -148,7 +148,7 @@ pub struct MorseComplex {
 }
 
 impl MorseComplex {
-    fn from_graph(kind: MorseKind, graph: &UnGraph<LabeledPoint, f64>) -> MorseComplex {
+    fn from_graph<T>(kind: MorseKind, graph: &UnGraph<LabeledPoint<T>, f64>) -> MorseComplex {
         let ordered_points = MorseComplex::get_ordered_points(kind, &graph);
         let num_points = ordered_points.len();
         let cells = PointedUnionFind::new(num_points);
@@ -157,7 +157,7 @@ impl MorseComplex {
         complex
     }
 
-    fn get_ordered_points(kind: MorseKind, graph: &UnGraph<LabeledPoint, f64>) -> Vec<MorseNode> {
+    fn get_ordered_points<T>(kind: MorseKind, graph: &UnGraph<LabeledPoint<T>, f64>) -> Vec<MorseNode> {
         let mut nodes: Vec<NodeIndex> = graph.node_indices().collect();
         nodes.sort_by(|a, b| {
                 let a_node = graph.node_weight(*a).expect("Node a wasn't in graph");
@@ -215,7 +215,7 @@ impl MorseComplex {
         result
     }
 
-    fn construct_complex(&mut self, graph: &UnGraph<LabeledPoint, f64>) -> &Self{
+    fn construct_complex<T>(&mut self, graph: &UnGraph<LabeledPoint<T>, f64>) -> &Self{
         // We iterate through the points in descending (or ascending, depends on self.kind) 
         // order, which means we are essentially building the morse complex at the same time
         // that we compute persistence.
@@ -254,8 +254,8 @@ impl MorseComplex {
     }
 
     // FIXME: I don't like this signature. Not at all clear what this returned nodeindex means
-    fn merge_crystals(&mut self, ordered_index: usize, ascending_neighbors: &[usize],
-                      graph: &UnGraph<LabeledPoint, f64>) -> NodeIndex {
+    fn merge_crystals<T>(&mut self, ordered_index: usize, ascending_neighbors: &[usize],
+                      graph: &UnGraph<LabeledPoint<T>, f64>) -> NodeIndex {
         // If there are no neighbors, there's nothing to merge
         if ascending_neighbors.is_empty() {
             return self.ordered_points[ordered_index].node;
