@@ -19,9 +19,11 @@ use petgraph::graph::{UnGraph, NodeIndex};
 pub mod morse;
 pub mod graph;
 
+
 #[macro_use] extern crate cpython;
-use cpython::{PyResult, Python, PyList, PyTuple, PyObject, ToPyObject, FromPyObject};
+use cpython::{PyResult, Python, PyList, PyTuple, PyObject, ToPyObject, FromPyObject, PyErr, exc, PyString};
 use crate::cpython::ObjectProtocol;
+
 
 
 py_module_initializer!(talus, inittalus, PyInit_talus, |py, m| {
@@ -37,8 +39,14 @@ fn approximate_knn_persistence_py(py: Python, points: PyList, k: usize, sample_r
     for point in points.iter(py) {
         labeled_points.push(point.extract(py)?);
     }
-    let g = graph::build_knn_approximate(&labeled_points, k, sample_rate, precision);
-    let complex = morse::MorseSmaleComplex::from_graph(&g);
+    let g = match graph::build_knn_approximate(&labeled_points, k, sample_rate, precision){
+        Err(err) => return Err(PyErr::new::<exc::Exception, PyString>(py, PyString::new(py, &format!("{:?}", err)))),
+        Ok(g) => g
+    };
+    let complex = match morse::MorseSmaleComplex::from_graph(&g) {
+        Err(err) => return Err(PyErr::new::<exc::Exception, PyString>(py, PyString::new(py, &format!("{:?}", err)))),
+        Ok(complex) => complex
+    };
     let data = complex.to_data(&g);
     Ok(data.into_py_object(py))
 }
@@ -48,8 +56,14 @@ fn knn_persistence_py(py: Python, points: PyList, k: usize) -> PyResult<PyTuple>
     for point in points.iter(py) {
         labeled_points.push(point.extract(py)?);
     }
-    let g = graph::build_knn(&labeled_points, k);
-    let complex = morse::MorseSmaleComplex::from_graph(&g);
+    let g = match graph::build_knn(&labeled_points, k) {
+        Err(err) => return Err(PyErr::new::<exc::Exception, PyString>(py, PyString::new(py, &format!("{:?}", err)))),
+        Ok(g) => g
+    };
+    let complex = match morse::MorseSmaleComplex::from_graph(&g) {
+        Err(err) => return Err(PyErr::new::<exc::Exception, PyString>(py, PyString::new(py, &format!("{:?}", err)))),
+        Ok(complex) => complex
+    };
     let data = complex.to_data(&g);
     Ok(data.into_py_object(py))
 }
@@ -70,7 +84,10 @@ fn persistence_py(py: Python, nodes: PyList, edges: PyList) -> PyResult<PyTuple>
         let right: i64 = node_tuple.get_item(py, 1).extract(py)?;
         g.add_edge((id_lookup.get(&left).unwrap()).1, id_lookup.get(&right).unwrap().1, 1.);
     }
-    let complex = morse::MorseSmaleComplex::from_graph(&g);
+    let complex = match morse::MorseSmaleComplex::from_graph(&g) {
+        Err(err) => return Err(PyErr::new::<exc::Exception, PyString>(py, PyString::new(py, &format!("{:?}", err)))),
+        Ok(complex) => complex
+    };
     let data = complex.to_data(&g);
     Ok(data.into_py_object(py))
 }
