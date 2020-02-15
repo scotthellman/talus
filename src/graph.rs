@@ -1,13 +1,29 @@
 //! Algorithms for constructing graphs from sets of points
 use std::hash::{Hash, Hasher};
 use petgraph::graph::UnGraph;
-use kdtree::KdTree;
+use kdtree;
 use kdtree::distance::squared_euclidean;
 use std::collections::HashSet;
 use std::f64;
 use rand::prelude::*;
+use thiserror::Error;
 
 use super::{PreMetric, LabeledPoint};
+
+#[derive(Error, Debug)]
+pub enum GraphError {
+    #[error("descriptive fmt string here")]
+    GraphConstructionFailure (#[from] kdtree::ErrorKind),
+
+    #[error("descriptive fmt string here")]
+    KTooLarge {
+        k: usize,
+        num_points: usize
+    },
+
+    #[error("descriptive fmt string here")]
+    ConvergenceFailure {}
+}
 
 #[derive(Debug, Clone, Copy)]
 enum NeighborState {
@@ -106,16 +122,15 @@ fn update_neighbors(data: &mut Vec<NeighborData>, data_idx: usize, neighbor: usi
     false
 }
 
-fn rejection_sample(count: usize, range: usize, rng: &mut ThreadRng) -> Vec<usize> {
+fn rejection_sample(count: usize, range: usize, rng: &mut ThreadRng) -> Result<Vec<usize>, GraphError> {
     if range < count {
-        // FIXME yeah this can't stay like this
-        panic!();
+        return Err(GraphError::KTooLarge{k: count, num_points: range})
     }
     let mut sample: HashSet<usize> = HashSet::with_capacity(count);
     while sample.len() < count {
         sample.insert(rng.gen_range(0, range));
     }
-    sample.iter().copied().collect()
+    Ok(sample.iter().copied().collect())
 }
 
 
@@ -134,24 +149,24 @@ fn rejection_sample(count: usize, range: usize, rng: &mut ThreadRng) -> Vec<usiz
 /// For very fast distance calculations, this can be slower than the exact computation.
 /// Note that this _does not_ require the similarity function to be a distance metric.
 pub fn build_knn_approximate<T: PreMetric + Clone>(points: &[LabeledPoint<T>], k: usize, sample_rate: f64, precision: f64) 
-    -> UnGraph<LabeledPoint<T>, f64> {
+    -> Result<UnGraph<LabeledPoint<T>, f64>, GraphError> {
     // https://www.cs.princeton.edu/cass/papers/www11.pdf
 
     let mut rng = rand::thread_rng();
-    let mut approximate_neighbors: Vec<Vec<NeighborData>> = (0..points.len())
-        .map(|_| {
-            let points = rejection_sample(k, points.len(), &mut rng);
-            points.iter()
+    let mut approximate_neighbors = Vec::with_capacity(points.len());
+    for _ in 0..(points.len()) {
+        let points = rejection_sample(k, points.len(), &mut rng)?;
+        approximate_neighbors.push(points.iter()
                 .map(|&j| NeighborData{distance: f64::INFINITY, idx:j, state: NeighborState::New})
-                .collect()
-        })
-        .collect();
+                .collect());
+    }
+
     let mut done = false;
     let mut iters = 0;
     while !done {
         iters += 1;
         // I'm making targets be a vec of hashsets
-        // because redudnant targets is a very real possibility and i need an efficient solution
+        // because redundant targets is a very real possibility and i need an efficient solution
         // to account for those
         let mut targets: Vec<HashSet<NeighborData>> = approximate_neighbors.iter_mut()
             .map(|neighbors| sample_neighbors(neighbors, sample_rate))
@@ -178,14 +193,12 @@ pub fn build_knn_approximate<T: PreMetric + Clone>(points: &[LabeledPoint<T>], k
 
         done = counter <= (precision * points.len() as f64 * k as f64) as i64;
         if iters > 2000 {
-            // FIXME: This should probably be more graceful than full-on panicking 
-            // TODO: A timeout would be nice - there's a perfectly usable graph at every step after
-            // all
-            panic!();
+            // TODO: this should really return the graph as-is
+            return Err(GraphError::ConvergenceFailure{});
         }
     }
 
-    graph_from_neighbordata(points, approximate_neighbors)
+    Ok(graph_from_neighbordata(points, approximate_neighbors))
 }
 
 fn graph_from_neighbordata<T: PreMetric + Clone>(points: &[LabeledPoint<T>], neighbors: Vec<Vec<NeighborData>>)
@@ -210,11 +223,11 @@ fn graph_from_neighbordata<T: PreMetric + Clone>(points: &[LabeledPoint<T>], nei
 ///
 /// This implementation uses a KD-tree for efficient nearest neighbor querying. This means that it
 /// only works for vectors of real numbers, and can only use the Euclidean metric.
-pub fn build_knn(points: &[LabeledPoint<Vec<f64>>], k: usize) -> UnGraph<LabeledPoint<Vec<f64>>, f64> {
+pub fn build_knn(points: &[LabeledPoint<Vec<f64>>], k: usize) -> Result<UnGraph<LabeledPoint<Vec<f64>>, f64>, GraphError> {
     let dim = points[0].point.len();
-    let mut tree = KdTree::new(dim);
+    let mut tree = kdtree::KdTree::new(dim);
     for (i, point) in points.iter().enumerate() {
-        tree.add(&point.point, i).unwrap();
+        tree.add(&point.point, i)?;
     }
     let mut neighbor_graph = UnGraph::new_undirected();
     let mut node_lookup = Vec::with_capacity(points.len());
@@ -223,15 +236,14 @@ pub fn build_knn(points: &[LabeledPoint<Vec<f64>>], k: usize) -> UnGraph<Labeled
         node_lookup.push(node);
     }
     for (i, point) in points.iter().enumerate() {
-        tree.iter_nearest(&point.point, &squared_euclidean)
-            .unwrap()
+        tree.iter_nearest(&point.point, &squared_euclidean)?
             .skip(1)  // always returns itself as the first one
             .take(k)
             .for_each(|(dist, &j)| {
                 neighbor_graph.update_edge(node_lookup[i], node_lookup[j], dist);
             })
     }
-    neighbor_graph
+    Ok(neighbor_graph)
 }
 
 #[cfg(test)]

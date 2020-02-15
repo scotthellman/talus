@@ -8,6 +8,31 @@ use std::f64;
 
 use super::LabeledPoint;
 
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum MorseError {
+    //#[error("descriptive fmt string here")]
+    //GraphConstructionFailure (#[from] kdtree::ErrorKind),
+
+    #[error("descriptive fmt string here")]
+    NanInValues { },
+
+    //FIXME: these errors should include info about the node
+
+    #[error("descriptive fmt string here")]
+    MissingNode {},
+
+    #[error("descriptive fmt string here")]
+    BadNeighbor {},
+
+    #[error("descriptive fmt string here")]
+    NoMaximum {},
+
+    #[error("descriptive fmt string here")]
+    MissingData {}
+}
+
 #[derive(Debug)]
 struct MorseData {
     lifetime: f64,
@@ -41,6 +66,7 @@ impl PartialEq for MorseNode {
 
 impl Eq for MorseNode {}
 
+#[derive(Debug)]
 struct PointedUnionFind {
     unionfind: UnionFind<usize>,
     reprs: Vec<usize>
@@ -106,6 +132,7 @@ pub enum MorseKind {
 /// from a graph.
 ///
 /// See [MorseComplex](struct.MorseComplex.html) for a detailed explanation.
+#[derive(Debug)]
 pub struct MorseSmaleComplex {
     pub ascending_complex: MorseComplex,
     pub descending_complex: MorseComplex
@@ -114,11 +141,11 @@ pub struct MorseSmaleComplex {
 impl MorseSmaleComplex {
 
     /// Constructs a MorseSmaleComplex from the given graph.
-    pub fn from_graph<T>(graph: &UnGraph<LabeledPoint<T>, f64>) -> MorseSmaleComplex {
-        let ascending_complex = MorseComplex::from_graph(MorseKind::Ascending, &graph);
-        let descending_complex = MorseComplex::from_graph(MorseKind::Descending, &graph);
+    pub fn from_graph<T>(graph: &UnGraph<LabeledPoint<T>, f64>) -> Result<MorseSmaleComplex, MorseError> {
+        let ascending_complex = MorseComplex::from_graph(MorseKind::Ascending, &graph)?;
+        let descending_complex = MorseComplex::from_graph(MorseKind::Descending, &graph)?;
 
-        MorseSmaleComplex{ascending_complex, descending_complex}
+        Ok(MorseSmaleComplex{ascending_complex, descending_complex})
     }
 
     pub fn to_data<T>(&self, graph: &UnGraph<LabeledPoint<T>, f64>) -> (MorseComplexData, MorseComplexData) {
@@ -144,6 +171,7 @@ impl MorseSmaleComplex {
 /// according to their extrema's persistence, starting with the least persistent
 /// partition. 
 ///
+#[derive(Debug)]
 pub struct MorseComplex {
     ordered_points: Vec<MorseNode>,
     cells: PointedUnionFind,
@@ -152,13 +180,13 @@ pub struct MorseComplex {
 }
 
 impl MorseComplex {
-    fn from_graph<T>(kind: MorseKind, graph: &UnGraph<LabeledPoint<T>, f64>) -> MorseComplex {
+    fn from_graph<T>(kind: MorseKind, graph: &UnGraph<LabeledPoint<T>, f64>) -> Result<MorseComplex, MorseError> {
         let ordered_points = MorseComplex::get_ordered_points(kind, &graph);
         let num_points = ordered_points.len();
         let cells = PointedUnionFind::new(num_points);
         let mut complex = MorseComplex{kind, ordered_points, cells, filtration: vec![]};
-        complex.construct_complex(graph);
-        complex
+        complex.construct_complex(graph)?;
+        Ok(complex)
     }
 
     pub fn to_data<T>(&self, graph: &UnGraph<LabeledPoint<T>, f64>) -> MorseComplexData {
@@ -186,6 +214,7 @@ impl MorseComplex {
     fn get_ordered_points<T>(kind: MorseKind, graph: &UnGraph<LabeledPoint<T>, f64>) -> Vec<MorseNode> {
         let mut nodes: Vec<NodeIndex> = graph.node_indices().collect();
         nodes.sort_by(|a, b| {
+                // FIXME: how do i handle errors during the sort?
                 let a_node = graph.node_weight(*a).expect("Node a wasn't in graph");
                 let b_node = graph.node_weight(*b).expect("Node b wasn't in graph");
                 match kind {
@@ -241,7 +270,7 @@ impl MorseComplex {
         result
     }
 
-    fn construct_complex<T>(&mut self, graph: &UnGraph<LabeledPoint<T>, f64>) -> &Self{
+    fn construct_complex<T>(&mut self, graph: &UnGraph<LabeledPoint<T>, f64>) -> Result<&Self, MorseError>{
         // We iterate through the points in descending (or ascending, depends on self.kind) 
         // order, which means we are essentially building the morse complex at the same time
         // that we compute persistence.
@@ -270,28 +299,30 @@ impl MorseComplex {
             } else {
                 0.
             };
-            let ancestor = self.merge_crystals(i, &higher_indices, graph);
+            let ancestor = self.merge_crystals(i, &higher_indices, graph)?;
 
             // this is not a maximum so it has no lifetime
             self.ordered_points[i].data = Some(MorseData{lifetime, ancestor, merge_parent: None});
         }
         self.filtration = self.compute_filtration();
-        self
+        Ok(self)
     }
 
     // FIXME: I don't like this signature. Not at all clear what this returned nodeindex means
     fn merge_crystals<T>(&mut self, ordered_index: usize, ascending_neighbors: &[usize],
-                      graph: &UnGraph<LabeledPoint<T>, f64>) -> NodeIndex {
+                      graph: &UnGraph<LabeledPoint<T>, f64>) -> Result<NodeIndex, MorseError> {
         // If there are no neighbors, there's nothing to merge
         if ascending_neighbors.is_empty() {
-            return self.ordered_points[ordered_index].node;
+            return Ok(self.ordered_points[ordered_index].node);
         }
 
         // one neighbor is easy, just union this point in to that neighbor's crystal
         if ascending_neighbors.len() == 1 {
             let neighbor_index = ascending_neighbors[0];
             self.cells.union(neighbor_index, ordered_index);
-            return self.ordered_points[neighbor_index].data.as_ref().expect("Steepest neighbor had no data").ancestor;
+
+            return Ok(self.ordered_points[neighbor_index].data.as_ref().ok_or_else(|| {
+                MorseError::MissingData{}})?.ancestor);
         }
 
         // for multiple neighbors, first figure out if all neighbors are in the same crystal
@@ -303,7 +334,9 @@ impl MorseComplex {
         if connected_crystals.len() == 1 {
             let neighbor_index = ascending_neighbors[0];
             self.cells.union(neighbor_index, ordered_index);
-            return self.ordered_points[neighbor_index].data.as_ref().expect("Steepest neighbor had no data").ancestor;
+
+            return Ok(self.ordered_points[neighbor_index].data.as_ref().ok_or_else(|| {
+                MorseError::MissingData{}})?.ancestor);
         }
 
         // And if we're here then we're merging crystals
@@ -311,6 +344,7 @@ impl MorseComplex {
         let (_, max_crystal) = connected_crystals.iter()
             .map(|&idx| {
                 let node = &self.ordered_points[idx];
+                // FIXME: this expect should be be an error
                 let value = graph.node_weight(node.node).expect("max wasn't in the graph").value;
                 (value, idx)
             })
@@ -320,7 +354,7 @@ impl MorseComplex {
                     MorseKind::Ascending => b.0.partial_cmp(&a.0).expect("Nan in the values")
                 }
             )
-            .expect("No maximum was found, somehow?");
+            .ok_or(MorseError::NoMaximum{})?;
 
         let joining_node = &self.ordered_points[ordered_index];
 
@@ -340,17 +374,17 @@ impl MorseComplex {
                     MorseKind::Ascending => b.0.partial_cmp(&a.0).expect("Nan in the values")
                 }
             )
-            .expect("No steepest neighbor was found, somehow?");
+            .ok_or(MorseError::NoMaximum{})?;
 
         // now we need to update the lifetimes and merge the other crystals
-        let joining_value = graph.node_weight(joining_node.node).expect("joining node wasn't in the graph").value;
+        let joining_value = graph.node_weight(joining_node.node).ok_or(MorseError::MissingNode{})?.value;
         let merge_parent = self.ordered_points[max_crystal].node;
         self.cells.union(max_crystal, ordered_index);
         for crystal in connected_crystals {
             if crystal != max_crystal {
                 let crystal_node = &self.ordered_points[crystal];
-                let crystal_value = graph.node_weight(crystal_node.node).expect("crystal node wasn't in the graph").value;
-                let ancestor = self.ordered_points[crystal].data.as_ref().expect("crystal had no data").ancestor;
+                let crystal_value = graph.node_weight(crystal_node.node).ok_or(MorseError::MissingNode{})?.value;
+                let ancestor = self.ordered_points[crystal].data.as_ref().ok_or(MorseError::MissingData{})?.ancestor;
 
                 // abs here so that the math works for ascending or descending
                 let lifetime = (crystal_value - joining_value).abs();
@@ -359,7 +393,7 @@ impl MorseComplex {
                 self.cells.union(max_crystal, crystal);
             }
         }
-        self.ordered_points[steepest_neighbor].data.as_ref().expect("steepest neighbor had no data").ancestor
+        Ok(self.ordered_points[steepest_neighbor].data.as_ref().ok_or(MorseError::MissingData{})?.ancestor)
     }
 }
 //
