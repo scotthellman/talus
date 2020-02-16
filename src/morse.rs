@@ -1,5 +1,5 @@
 //! Algorithms for analyzing the behavior of a scalar function over a graph.
-use petgraph::graph::{UnGraph, NodeIndex};
+use petgraph::graph::{UnGraph, NodeIndex, EdgeIndex};
 use petgraph::unionfind::UnionFind;
 
 use std::collections::{HashSet, HashMap};
@@ -21,19 +21,19 @@ pub enum MorseError {
     //FIXME: these errors should include info about the node
 
     #[error("descriptive fmt string here")]
-    MissingNode {},
+    MissingNode {node: NodeIndex},
 
     #[error("descriptive fmt string here")]
-    BadNeighbor {},
+    MissingNeighbors {node: NodeIndex},
 
     #[error("descriptive fmt string here")]
-    MissingEdgeWeight {},
+    MissingEdgeWeight {edge: EdgeIndex},
 
     #[error("descriptive fmt string here")]
-    NoMaximum {},
+    NoMaximum {node: NodeIndex},
 
     #[error("descriptive fmt string here")]
-    MissingData {}
+    MissingData {node: NodeIndex}
 }
 
 #[derive(Debug)]
@@ -325,9 +325,11 @@ impl MorseComplex {
         if ascending_neighbors.len() == 1 {
             let neighbor_index = ascending_neighbors[0];
             self.cells.union(neighbor_index, ordered_index);
-
-            return Ok(self.ordered_points[neighbor_index].data.as_ref().ok_or_else(|| {
-                MorseError::MissingData{}})?.ancestor);
+            let neighbor = &self.ordered_points[neighbor_index];
+            return match neighbor.data.as_ref() {
+                None => Err(MorseError::MissingData{node: neighbor.node}),
+                Some(data) => Ok(data.ancestor)
+            }
         }
 
         // for multiple neighbors, first figure out if all neighbors are in the same cell
@@ -339,27 +341,36 @@ impl MorseComplex {
         if connected_cells.len() == 1 {
             let neighbor_index = ascending_neighbors[0];
             self.cells.union(neighbor_index, ordered_index);
-
-            return Ok(self.ordered_points[neighbor_index].data.as_ref().ok_or_else(|| {
-                MorseError::MissingData{}})?.ancestor);
+            let neighbor = &self.ordered_points[neighbor_index];
+            return match neighbor.data.as_ref() {
+                None => Err(MorseError::MissingData{node: neighbor.node}),
+                Some(data) => Ok(data.ancestor)
+            }
         }
 
         // And if we're here then we're merging cells
         // first figure out what the global max is
-        let max_cell = self.find_max_cell(&connected_cells, graph)?;
+        let max_cell = self.find_max_cell(ordered_index, &connected_cells, graph)?;
         let steepest_neighbor = self.find_steepest_neighbor(ordered_index, ascending_neighbors, graph)?;
         self.merge_cells(ordered_index, max_cell, &connected_cells, graph)?;
+        let ancestor = &self.ordered_points[steepest_neighbor];
 
-        Ok(self.ordered_points[steepest_neighbor].data.as_ref().ok_or(MorseError::MissingData{})?.ancestor)
+        match ancestor.data.as_ref() {
+            None => Err(MorseError::MissingData{node: ancestor.node}),
+            Some(data) => Ok(data.ancestor)
+        }
     }
 
-    fn find_max_cell<T>(&self, connected_cells: &HashSet<usize>, 
+    fn find_max_cell<T>(&self, joining_index: usize, connected_cells: &HashSet<usize>, 
                         graph: &UnGraph<LabeledPoint<T>, f64>) -> Result<usize, MorseError> {
         let mut current_max = None;
-        let mut max_index = Err(MorseError::NoMaximum{});
+        let mut max_index = Err(MorseError::NoMaximum{node: self.ordered_points[joining_index].node});
         for &cell_index in connected_cells {
-            let node = &self.ordered_points[cell_index];
-            let value = graph.node_weight(node.node).ok_or(MorseError::MissingNode{})?.value;
+            let node = self.ordered_points[cell_index].node;
+            let value = match graph.node_weight(node) {
+                None => return Err(MorseError::MissingNode{node}),
+                Some(weight) => weight.value
+            };
             let should_update = match current_max {
                 None => true,
                 Some(max_val) => match self.kind {
@@ -379,15 +390,15 @@ impl MorseComplex {
                                  graph: &UnGraph<LabeledPoint<T>, f64>) -> Result<usize, MorseError> {
         // TODO: Really similar logic here and in max cell. Could probably unify them
         // NB this doesn't check signs; it assumes neighbors has been filtered appropriately
-        let mut current_max = None;
-        let mut max_index = Err(MorseError::BadNeighbor{});
         let joining_node = &self.ordered_points[joining_index];
+        let mut current_max = None;
+        let mut max_index = Err(MorseError::MissingNeighbors{node: joining_node.node});
         for &neighbor_idx in neighbors {
             let node = &self.ordered_points[neighbor_idx];
             let value = graph.node_weight(node.node).unwrap().value;
             let edge = graph.find_edge(joining_node.node, node.node).expect("A neighbor wasn't really a neighbor");
             let grade = match graph.edge_weight(edge) {
-                None => return Err(MorseError::MissingEdgeWeight{}),
+                None => return Err(MorseError::MissingEdgeWeight{edge}),
                 Some(val) => (value / val).abs()
             };
 
@@ -407,17 +418,20 @@ impl MorseComplex {
                       graph: &UnGraph<LabeledPoint<T>, f64>) -> Result<(), MorseError> {
         let merge_parent = self.ordered_points[owning_cell].node;
         let joining_node = self.ordered_points[joining_index].node;
-        let joining_value = graph.node_weight(joining_node).ok_or(MorseError::MissingNode{})?.value;
+        let joining_value = match graph.node_weight(joining_node) {
+            None => return Err(MorseError::MissingNode{node: joining_node}),
+            Some(weight) => weight.value
+        };
         self.cells.union(owning_cell, joining_index);
         for &cell in merged_cells {
             if cell != owning_cell {
                 let cell_node = &self.ordered_points[cell];
                 let cell_value = match graph.node_weight(cell_node.node) {
-                    None => return Err(MorseError::MissingNode{}),
+                    None => return Err(MorseError::MissingNode{node: cell_node.node}),
                     Some(weight) => weight.value
                 };
                 let ancestor = match self.ordered_points[cell].data.as_ref() {
-                    None => return Err(MorseError::MissingData{}),
+                    None => return Err(MorseError::MissingData{node: cell_node.node}),
                     Some(data) => data.ancestor
                 };
 
