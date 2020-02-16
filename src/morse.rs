@@ -424,7 +424,7 @@ mod tests {
             node_lookup.push(node);
         }
         graph.add_edge(node_lookup[0], node_lookup[1], 0.);
-        let complex = MorseComplex::from_graph(MorseKind::Descending, &graph);
+        let complex = MorseComplex::from_graph(MorseKind::Descending, &graph).unwrap();
         let lifetimes = complex.get_persistence();
         assert_eq!(lifetimes[&node_lookup[0]], 0.);
         assert_eq!(lifetimes[&node_lookup[1]], f64::INFINITY);
@@ -446,7 +446,7 @@ mod tests {
         graph.add_edge(node_lookup[0], node_lookup[1], 0.);
         graph.add_edge(node_lookup[0], node_lookup[2], 0.);
         graph.add_edge(node_lookup[1], node_lookup[2], 0.);
-        let complex = MorseComplex::from_graph(MorseKind::Descending, &graph);
+        let complex = MorseComplex::from_graph(MorseKind::Descending, &graph).unwrap();
         let lifetimes = complex.get_persistence();
         assert_eq!(lifetimes[&node_lookup[0]], 0.);
         assert_eq!(lifetimes[&node_lookup[1]], 0.);
@@ -471,7 +471,7 @@ mod tests {
         graph.add_edge(node_lookup[0], node_lookup[2], 0.);
         graph.add_edge(node_lookup[1], node_lookup[3], 0.);
         graph.add_edge(node_lookup[2], node_lookup[3], 0.);
-        let complex = MorseComplex::from_graph(MorseKind::Descending, &graph);
+        let complex = MorseComplex::from_graph(MorseKind::Descending, &graph).unwrap();
         let lifetimes = complex.get_persistence();
         assert_eq!(lifetimes[&node_lookup[0]], 1.);
         assert_eq!(lifetimes[&node_lookup[1]], 0.);
@@ -499,7 +499,7 @@ mod tests {
         graph.add_edge(node_lookup[1], node_lookup[3], 1.);
         graph.add_edge(node_lookup[2], node_lookup[3], 1.);
         graph.add_edge(node_lookup[2], node_lookup[4], 1.);
-        let complex = MorseComplex::from_graph(MorseKind::Descending, &graph);
+        let complex = MorseComplex::from_graph(MorseKind::Descending, &graph).unwrap();
         let lifetimes = complex.get_persistence();
         println!("{:?}", lifetimes);
         assert_eq!(lifetimes[&node_lookup[0]], 0.);
@@ -540,7 +540,7 @@ mod tests {
         graph.add_edge(node_lookup[5], node_lookup[8], 1.);
         graph.add_edge(node_lookup[6], node_lookup[7], 1.);
         graph.add_edge(node_lookup[7], node_lookup[8], 1.);
-        let complex = MorseSmaleComplex::from_graph(&graph);
+        let complex = MorseSmaleComplex::from_graph(&graph).unwrap();
         let lifetimes = complex.descending_complex.get_persistence();
         assert_eq!(lifetimes[&node_lookup[0]], 5.);
         assert_eq!(lifetimes[&node_lookup[1]], 0.);
@@ -585,7 +585,7 @@ mod tests {
         graph.add_edge(node_lookup[1], node_lookup[2], 0.);
         graph.add_edge(node_lookup[1], node_lookup[4], 0.);
         graph.add_edge(node_lookup[3], node_lookup[4], 0.);
-        let complex = MorseComplex::from_graph(MorseKind::Descending, &graph);
+        let complex = MorseComplex::from_graph(MorseKind::Descending, &graph).unwrap();
         let lifetimes = complex.get_persistence();
         println!("{:?}", lifetimes);
         assert_eq!(lifetimes[&node_lookup[0]], 1.);

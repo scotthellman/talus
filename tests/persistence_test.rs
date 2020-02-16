@@ -15,8 +15,8 @@ fn continental_divide_test() {
     expected.insert(0, f64::INFINITY);
     expected.insert(1, 560.);
     expected.insert(2, 827.);
-    let graph = talus::graph::build_knn(&points, 5);
-    let complex = talus::morse::MorseSmaleComplex::from_graph(&graph);
+    let graph = talus::graph::build_knn(&points, 5).unwrap();
+    let complex = talus::morse::MorseSmaleComplex::from_graph(&graph).unwrap();
     let lifetimes = complex.descending_complex.get_persistence();
     lifetimes.iter()
         .map(|(node, lifetime)| (graph.node_weight(*node).unwrap().id, lifetime))
