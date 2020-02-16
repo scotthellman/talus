@@ -412,8 +412,14 @@ impl MorseComplex {
         for &cell in merged_cells {
             if cell != owning_cell {
                 let cell_node = &self.ordered_points[cell];
-                let cell_value = graph.node_weight(cell_node.node).ok_or(MorseError::MissingNode{})?.value;
-                let ancestor = self.ordered_points[cell].data.as_ref().ok_or(MorseError::MissingData{})?.ancestor;
+                let cell_value = match graph.node_weight(cell_node.node) {
+                    None => return Err(MorseError::MissingNode{}),
+                    Some(weight) => weight.value
+                };
+                let ancestor = match self.ordered_points[cell].data.as_ref() {
+                    None => return Err(MorseError::MissingData{}),
+                    Some(data) => data.ancestor
+                };
 
                 // abs here so that the math works for ascending or descending
                 let lifetime = (cell_value - joining_value).abs();
