@@ -299,7 +299,7 @@ impl MorseComplex {
             } else {
                 0.
             };
-            let ancestor = self.merge_crystals(i, &higher_indices, graph)?;
+            let ancestor = self.add_point_to_complex(i, &higher_indices, graph)?;
 
             // this is not a maximum so it has no lifetime
             self.ordered_points[i].data = Some(MorseData{lifetime, ancestor, merge_parent: None});
@@ -309,7 +309,7 @@ impl MorseComplex {
     }
 
     // FIXME: I don't like this signature. Not at all clear what this returned nodeindex means
-    fn merge_crystals<T>(&mut self, ordered_index: usize, ascending_neighbors: &[usize],
+    fn add_point_to_complex<T>(&mut self, ordered_index: usize, ascending_neighbors: &[usize],
                       graph: &UnGraph<LabeledPoint<T>, f64>) -> Result<NodeIndex, MorseError> {
         // If there are no neighbors, there's nothing to merge
         if ascending_neighbors.is_empty() {
@@ -341,6 +341,15 @@ impl MorseComplex {
 
         // And if we're here then we're merging crystals
         // first figure out what the global max is
+        let max_crystal = self.find_max_cell(&connected_crystals, graph)?;
+        let steepest_neighbor = self.find_steepest_neighbor(ordered_index, ascending_neighbors, graph)?;
+        self.merge_cells(ordered_index, max_crystal, &connected_crystals, graph)?;
+
+        Ok(self.ordered_points[steepest_neighbor].data.as_ref().ok_or(MorseError::MissingData{})?.ancestor)
+    }
+
+    fn find_max_cell<T>(&self, connected_crystals: &HashSet<usize>, graph: &UnGraph<LabeledPoint<T>, f64>) 
+        -> Result<usize, MorseError> {
         let (_, max_crystal) = connected_crystals.iter()
             .map(|&idx| {
                 let node = &self.ordered_points[idx];
@@ -355,10 +364,13 @@ impl MorseComplex {
                 }
             )
             .ok_or(MorseError::NoMaximum{})?;
+        Ok(max_crystal)
+    }
 
-        let joining_node = &self.ordered_points[ordered_index];
-
-        let (_, steepest_neighbor) = ascending_neighbors.iter()
+    fn find_steepest_neighbor<T>(&self, joining_index: usize, neighbors: &[usize], graph: &UnGraph<LabeledPoint<T>, f64>) 
+        -> Result<usize, MorseError> {
+        let joining_node = &self.ordered_points[joining_index];
+        let (_, steepest_neighbor) = neighbors.iter()
             .map(|&idx| {
                 let node = &self.ordered_points[idx];
                 let value = graph.node_weight(node.node).unwrap().value;
@@ -375,27 +387,32 @@ impl MorseComplex {
                 }
             )
             .ok_or(MorseError::NoMaximum{})?;
+        Ok(steepest_neighbor)
+    }
 
-        // now we need to update the lifetimes and merge the other crystals
-        let joining_value = graph.node_weight(joining_node.node).ok_or(MorseError::MissingNode{})?.value;
-        let merge_parent = self.ordered_points[max_crystal].node;
-        self.cells.union(max_crystal, ordered_index);
-        for crystal in connected_crystals {
-            if crystal != max_crystal {
-                let crystal_node = &self.ordered_points[crystal];
-                let crystal_value = graph.node_weight(crystal_node.node).ok_or(MorseError::MissingNode{})?.value;
-                let ancestor = self.ordered_points[crystal].data.as_ref().ok_or(MorseError::MissingData{})?.ancestor;
+    fn merge_cells<T>(&mut self, joining_index: usize, owning_cell: usize, merged_cells: &HashSet<usize>,
+                      graph: &UnGraph<LabeledPoint<T>, f64>) -> Result<(), MorseError> {
+        let merge_parent = self.ordered_points[owning_cell].node;
+        let joining_node = self.ordered_points[joining_index].node;
+        let joining_value = graph.node_weight(joining_node).ok_or(MorseError::MissingNode{})?.value;
+        self.cells.union(owning_cell, joining_index);
+        for &cell in merged_cells {
+            if cell != owning_cell {
+                let cell_node = &self.ordered_points[cell];
+                let cell_value = graph.node_weight(cell_node.node).ok_or(MorseError::MissingNode{})?.value;
+                let ancestor = self.ordered_points[cell].data.as_ref().ok_or(MorseError::MissingData{})?.ancestor;
 
                 // abs here so that the math works for ascending or descending
-                let lifetime = (crystal_value - joining_value).abs();
-                self.ordered_points[crystal].data = Some(MorseData{ancestor, lifetime, 
+                let lifetime = (cell_value - joining_value).abs();
+                self.ordered_points[cell].data = Some(MorseData{ancestor, lifetime, 
                     merge_parent: Some(merge_parent)});
-                self.cells.union(max_crystal, crystal);
+                self.cells.union(owning_cell, cell);
             }
         }
-        Ok(self.ordered_points[steepest_neighbor].data.as_ref().ok_or(MorseError::MissingData{})?.ancestor)
+        Ok(())
     }
 }
+
 //
 // FIXME: still need more types here
 /// A struct that captures the important data about a MorseSmaleComplex
