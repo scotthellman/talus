@@ -50,7 +50,7 @@ pub struct LabeledPoint<T> {
     /// An identifier for this point. Assumed to be unique.
     pub id: i64,
 
-    /// FIXME The vector denoting the points location in some space. Used for distance computations.
+    /// The value denoting the point's location in some space. Used for distance computations.
     pub point: T,
 
     /// The scalar value associated with this point. 
@@ -70,7 +70,6 @@ impl<T: Clone> Clone for LabeledPoint<T> {
 }
 
 impl LabeledPoint<Vec<f64>> {
-    // FIXME: move hte vec stuff to its own impl
     pub fn from_record(record: &StringRecord) -> LabeledPoint<Vec<f64>> {
         let id = record[0].parse::<i64>().expect("Expected an int");
         let value = record[1].parse::<f64>().expect("Expected a float");
