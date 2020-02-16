@@ -12,16 +12,18 @@ use super::{PreMetric, LabeledPoint};
 
 #[derive(Error, Debug)]
 pub enum GraphError {
-    #[error("descriptive fmt string here")]
+    #[error("Could not construct graph due to a KdTree error")]
     GraphConstructionFailure (#[from] kdtree::ErrorKind),
 
-    #[error("descriptive fmt string here")]
+    #[error("Requested {k:?} neighbors but only {num_points:?} exist")]
     KTooLarge {
         k: usize,
         num_points: usize
     },
 
-    #[error("descriptive fmt string here")]
+    // TODO: This should have the existing graph in it
+    // (only not doing it right now because the graph is generic in T
+    #[error("Graph construction failed to converge")]
     ConvergenceFailure {}
 }
 
@@ -193,7 +195,6 @@ pub fn build_knn_approximate<T: PreMetric + Clone>(points: &[LabeledPoint<T>], k
 
         done = counter <= (precision * points.len() as f64 * k as f64) as i64;
         if iters > 2000 {
-            // TODO: this should really return the graph as-is
             return Err(GraphError::ConvergenceFailure{});
         }
     }
