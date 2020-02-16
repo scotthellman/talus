@@ -309,6 +309,8 @@ impl MorseComplex {
     }
 
     // FIXME: I don't like this signature. Not at all clear what this returned nodeindex means
+    // FIXME: another type issue: usize gets used in two different ways (as cell and as index into
+    // ordered_points). Would be good to clarify which was which
     fn add_point_to_complex<T>(&mut self, ordered_index: usize, ascending_neighbors: &[usize],
                       graph: &UnGraph<LabeledPoint<T>, f64>) -> Result<NodeIndex, MorseError> {
         // If there are no neighbors, there's nothing to merge
@@ -348,23 +350,26 @@ impl MorseComplex {
         Ok(self.ordered_points[steepest_neighbor].data.as_ref().ok_or(MorseError::MissingData{})?.ancestor)
     }
 
-    fn find_max_cell<T>(&self, connected_crystals: &HashSet<usize>, graph: &UnGraph<LabeledPoint<T>, f64>) 
-        -> Result<usize, MorseError> {
-        let (_, max_crystal) = connected_crystals.iter()
-            .map(|&idx| {
-                let node = &self.ordered_points[idx];
-                // FIXME: this expect should be be an error
-                let value = graph.node_weight(node.node).expect("max wasn't in the graph").value;
-                (value, idx)
-            })
-            .max_by(|a, b| match self.kind {
-                //TODO: would be nice to pull this logic out
-                    MorseKind::Descending => a.0.partial_cmp(&b.0).expect("Nan in the values"),
-                    MorseKind::Ascending => b.0.partial_cmp(&a.0).expect("Nan in the values")
-                }
-            )
-            .ok_or(MorseError::NoMaximum{})?;
-        Ok(max_crystal)
+    fn find_max_cell<T>(&self, connected_cells: &HashSet<usize>, 
+                        graph: &UnGraph<LabeledPoint<T>, f64>) -> Result<usize, MorseError> {
+        let mut current_max = None;
+        let mut max_index = Err(MorseError::NoMaximum{});
+        for &cell_index in connected_cells {
+            let node = &self.ordered_points[cell_index];
+            let value = graph.node_weight(node.node).ok_or(MorseError::MissingNode{})?.value;
+            let should_update = match current_max {
+                None => true,
+                Some(max_val) => match self.kind {
+                        MorseKind::Descending => value > max_val,
+                        MorseKind::Ascending => value < max_val
+                    }
+                };
+            if should_update {
+                current_max = Some(value);
+                max_index = Ok(cell_index);
+            }
+        }
+        max_index
     }
 
     fn find_steepest_neighbor<T>(&self, joining_index: usize, neighbors: &[usize], graph: &UnGraph<LabeledPoint<T>, f64>) 
