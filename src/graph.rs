@@ -271,7 +271,7 @@ mod tests {
         expected_adjacencies.insert(5, vec![3, 4, 6]);
         expected_adjacencies.insert(6, vec![4, 5]);
 
-        let g = build_knn(&points, 2);
+        let g = build_knn(&points, 2).unwrap();
         for node in g.node_indices() {
             let id = g.node_weight(node).unwrap().id;
             let adj_ids: HashSet<i64> = g.neighbors(node)
@@ -288,7 +288,8 @@ mod tests {
 
     #[test]
     fn test_knn_approximate() {
-        // Strictly speaking I'm not sure that these assertions are guaranteed to be correct
+        // FIXME: this stochastically fails. Which is expected! So fix the assertions to account
+        // for that
         let points = [
             LabeledPoint{id: 0, value: 6., point: vec![0., 0.]},
             LabeledPoint{id: 1, value: 2., point: vec![1., 0.]},
@@ -307,8 +308,7 @@ mod tests {
         expected_adjacencies.insert(5, vec![3, 4, 6]);
         expected_adjacencies.insert(6, vec![4, 5]);
 
-        let g = build_knn_approximate(&points, 2, 0.8, 0.01);
-        println!("{:?}", g);
+        let g = build_knn_approximate(&points, 2, 0.8, 0.01).unwrap();
         for node in g.node_indices() {
             let id = g.node_weight(node).unwrap().id;
             let adj_ids: HashSet<i64> = g.neighbors(node)
