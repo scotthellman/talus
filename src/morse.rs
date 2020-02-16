@@ -296,7 +296,7 @@ impl MorseComplex {
                 .collect();
 
             // Nothing to do if we have no neighbors, but if we do then we
-            // have to merge the correspond morse crystals
+            // have to merge the correspond morse cells
             let lifetime = if higher_indices.is_empty () {
                 f64::INFINITY  
             } else {
@@ -321,7 +321,7 @@ impl MorseComplex {
             return Ok(self.ordered_points[ordered_index].node);
         }
 
-        // one neighbor is easy, just union this point in to that neighbor's crystal
+        // one neighbor is easy, just union this point in to that neighbor's cell
         if ascending_neighbors.len() == 1 {
             let neighbor_index = ascending_neighbors[0];
             self.cells.union(neighbor_index, ordered_index);
@@ -330,13 +330,13 @@ impl MorseComplex {
                 MorseError::MissingData{}})?.ancestor);
         }
 
-        // for multiple neighbors, first figure out if all neighbors are in the same crystal
-        let connected_crystals: HashSet<_> = ascending_neighbors.iter()
+        // for multiple neighbors, first figure out if all neighbors are in the same cell
+        let connected_cells: HashSet<_> = ascending_neighbors.iter()
             .map(|&idx| self.cells.find(idx))
             .collect();
 
-        // If they are all in the same crystal, it's the same as if there was just one neighbor
-        if connected_crystals.len() == 1 {
+        // If they are all in the same cell, it's the same as if there was just one neighbor
+        if connected_cells.len() == 1 {
             let neighbor_index = ascending_neighbors[0];
             self.cells.union(neighbor_index, ordered_index);
 
@@ -344,11 +344,11 @@ impl MorseComplex {
                 MorseError::MissingData{}})?.ancestor);
         }
 
-        // And if we're here then we're merging crystals
+        // And if we're here then we're merging cells
         // first figure out what the global max is
-        let max_crystal = self.find_max_cell(&connected_crystals, graph)?;
+        let max_cell = self.find_max_cell(&connected_cells, graph)?;
         let steepest_neighbor = self.find_steepest_neighbor(ordered_index, ascending_neighbors, graph)?;
-        self.merge_cells(ordered_index, max_crystal, &connected_crystals, graph)?;
+        self.merge_cells(ordered_index, max_cell, &connected_cells, graph)?;
 
         Ok(self.ordered_points[steepest_neighbor].data.as_ref().ok_or(MorseError::MissingData{})?.ancestor)
     }
