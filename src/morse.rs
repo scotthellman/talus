@@ -4,6 +4,7 @@ use petgraph::unionfind::UnionFind;
 
 use std::collections::{HashSet, HashMap};
 use std::hash::{Hash, Hasher};
+use std::cmp::Ordering;
 use std::f64;
 
 use super::LabeledPoint;
@@ -12,27 +13,25 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum MorseError {
-    //#[error("descriptive fmt string here")]
-    //GraphConstructionFailure (#[from] kdtree::ErrorKind),
+    #[error("Node {node:?} had NaN for its value")]
+    NanValue {node: NodeIndex},
 
-    #[error("descriptive fmt string here")]
-    NanInValues { },
-
-    //FIXME: these errors should include info about the node
-
-    #[error("descriptive fmt string here")]
+    #[error("Expected node {node:?} in graph but could not find it")]
     MissingNode {node: NodeIndex},
 
-    #[error("descriptive fmt string here")]
+    #[error("Node {node:?} had no neighbors but neighbors were expected")]
     MissingNeighbors {node: NodeIndex},
 
-    #[error("descriptive fmt string here")]
+    #[error("Could not compute gradient, edge {edge:?} had no weight")]
     MissingEdgeWeight {edge: EdgeIndex},
 
-    #[error("descriptive fmt string here")]
+    #[error("Expected edge between {node:?} and {other:?} but could not find it")]
+    MissingEdge {node: NodeIndex, other: NodeIndex},
+
+    #[error("Could not find a maximum for node {node:?}")]
     NoMaximum {node: NodeIndex},
 
-    #[error("descriptive fmt string here")]
+    #[error("Could not find data for node {node:?}")]
     MissingData {node: NodeIndex}
 }
 
@@ -184,7 +183,7 @@ pub struct MorseComplex {
 
 impl MorseComplex {
     fn from_graph<T>(kind: MorseKind, graph: &UnGraph<LabeledPoint<T>, f64>) -> Result<MorseComplex, MorseError> {
-        let ordered_points = MorseComplex::get_ordered_points(kind, &graph);
+        let ordered_points = MorseComplex::get_ordered_points(kind, &graph)?;
         let num_points = ordered_points.len();
         let cells = PointedUnionFind::new(num_points);
         let mut complex = MorseComplex{kind, ordered_points, cells, filtration: vec![]};
@@ -214,18 +213,39 @@ impl MorseComplex {
         MorseComplexData{lifetimes, filtration, complex}
     }
 
-    fn get_ordered_points<T>(kind: MorseKind, graph: &UnGraph<LabeledPoint<T>, f64>) -> Vec<MorseNode> {
-        let mut nodes: Vec<NodeIndex> = graph.node_indices().collect();
-        nodes.sort_by(|a, b| {
-                // FIXME: how do i handle errors during the sort?
-                let a_node = graph.node_weight(*a).expect("Node a wasn't in graph");
-                let b_node = graph.node_weight(*b).expect("Node b wasn't in graph");
+    fn get_ordered_points<T>(kind: MorseKind,
+                             graph: &UnGraph<LabeledPoint<T>, f64>) -> Result<Vec<MorseNode>, MorseError> {
+        let nodes: Result<Vec<(NodeIndex, f64)>, MorseError> = graph.node_indices()
+            .map(|node_idx| {
+                match graph.node_weight(node_idx) {
+                    None => Err(MorseError::MissingNode{node: node_idx}),
+                    Some(weight) => {
+                        if weight.value.is_nan() {
+                            Err(MorseError::NanValue{node: node_idx})
+                        } else{
+                            Ok((node_idx, weight.value))
+                        }
+                    }
+                }
+            })
+            .collect();
+        let mut nodes = nodes?;
+
+        nodes.sort_by(|(_, a), (_, b)| {
+                // we know these aren't nan, but the compiler doesn't, so just handle nans
+                // arbitrarily
                 match kind {
-                    MorseKind::Descending => b_node.value.partial_cmp(&a_node.value).expect("Nan in the values"),
-                    MorseKind::Ascending => a_node.value.partial_cmp(&b_node.value).expect("Nan in the values")
+                    MorseKind::Descending => match b.partial_cmp(&a) {
+                        None => Ordering::Less,
+                        Some(ord) => ord
+                    },
+                    MorseKind::Ascending => match a.partial_cmp(&b) {
+                        None => Ordering::Less,
+                        Some(ord) => ord
+                    }
                 }
             });
-        nodes.iter().enumerate().map(|(_, n)| MorseNode::new(*n)).collect()
+        Ok(nodes.iter().map(|(n, _)| MorseNode::new(*n)).collect())
     }
 
     fn compute_filtration(&self) -> Vec<MorseFiltrationStep> {
@@ -243,7 +263,12 @@ impl MorseComplex {
                 }
              })
              .collect::<Vec<_>>();
-        filtration.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap());
+        // there _shouldn't_ be nans in here, looking forward to being confused in a month when
+        // there are!
+        filtration.sort_by(|a, b| match a.time.partial_cmp(&b.time) {
+            None => Ordering::Less,
+            Some(ord) => ord
+        });
         filtration
     }
 
@@ -284,16 +309,33 @@ impl MorseComplex {
 
         for i in 0..self.ordered_points.len() {
             // find all *already processed* points that we have an edge to
-            let this_value = graph.node_weight(self.ordered_points[i].node).unwrap().value;
-            let higher_indices: Vec<usize> = graph.neighbors(self.ordered_points[i].node)
-                .filter(|n| { match self.kind {
-                        MorseKind::Ascending => graph.node_weight(*n).unwrap().value <= this_value,
-                        MorseKind::Descending => graph.node_weight(*n).unwrap().value >= this_value
+            let this_value = match graph.node_weight(self.ordered_points[i].node) {
+                None => return Err(MorseError::MissingNode{node: self.ordered_points[i].node}),
+                Some(weight) => weight.value
+            };
+            let higher_indices: Result<Vec<usize>, MorseError> = graph.neighbors(self.ordered_points[i].node)
+                .filter(|n| { 
+                    // I don't love silently dropping missing node weights, but the problem will
+                    // throw an error farther down the line
+                    let value = match graph.node_weight(*n) {
+                        None => return false,
+                        Some(weight) => weight.value
+                    };
+                    match self.kind {
+                        MorseKind::Ascending => value <= this_value,
+                        MorseKind::Descending => value >= this_value
                     }
                 })
-                .map(|n| *inverse_lookup.get(&n).unwrap())
-                .filter(|&n_idx| n_idx < i)
+                .map(|n| match inverse_lookup.get(&n) {
+                    None => Err(MorseError::MissingNode{node: n}),
+                    Some(&n_idx) => Ok(n_idx)
+                })
+                .filter(|n_idx| match n_idx {
+                    Err(_) => true,
+                    Ok(n_idx) => *n_idx < i
+                })
                 .collect();
+            let higher_indices = higher_indices?;
 
             // Nothing to do if we have no neighbors, but if we do then we
             // have to merge the correspond morse cells
@@ -395,8 +437,14 @@ impl MorseComplex {
         let mut max_index = Err(MorseError::MissingNeighbors{node: joining_node.node});
         for &neighbor_idx in neighbors {
             let node = &self.ordered_points[neighbor_idx];
-            let value = graph.node_weight(node.node).unwrap().value;
-            let edge = graph.find_edge(joining_node.node, node.node).expect("A neighbor wasn't really a neighbor");
+            let value = match graph.node_weight(node.node) {
+                None => return Err(MorseError::MissingNode{node: node.node}),
+                Some(weight) => weight.value
+            };
+            let edge = match graph.find_edge(joining_node.node, node.node) {
+                None => return Err(MorseError::MissingEdge{node: joining_node.node, other: node.node}),
+                Some(edge) => edge
+            };
             let grade = match graph.edge_weight(edge) {
                 None => return Err(MorseError::MissingEdgeWeight{edge}),
                 Some(val) => (value / val).abs()
