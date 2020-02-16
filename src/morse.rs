@@ -27,6 +27,9 @@ pub enum MorseError {
     BadNeighbor {},
 
     #[error("descriptive fmt string here")]
+    MissingEdgeWeight {},
+
+    #[error("descriptive fmt string here")]
     NoMaximum {},
 
     #[error("descriptive fmt string here")]
@@ -372,27 +375,32 @@ impl MorseComplex {
         max_index
     }
 
-    fn find_steepest_neighbor<T>(&self, joining_index: usize, neighbors: &[usize], graph: &UnGraph<LabeledPoint<T>, f64>) 
-        -> Result<usize, MorseError> {
+    fn find_steepest_neighbor<T>(&self, joining_index: usize, neighbors: &[usize],
+                                 graph: &UnGraph<LabeledPoint<T>, f64>) -> Result<usize, MorseError> {
+        // TODO: Really similar logic here and in max cell. Could probably unify them
+        // NB this doesn't check signs; it assumes neighbors has been filtered appropriately
+        let mut current_max = None;
+        let mut max_index = Err(MorseError::BadNeighbor{});
         let joining_node = &self.ordered_points[joining_index];
-        let (_, steepest_neighbor) = neighbors.iter()
-            .map(|&idx| {
-                let node = &self.ordered_points[idx];
-                let value = graph.node_weight(node.node).unwrap().value;
-                let edge = graph.find_edge(joining_node.node, node.node).expect("A neighbor wasn't really a neighbor");
-                // unwrap_or here because the persistence calculation is still meaningful
-                // even we we aren't in a metric space, so lack of grade information shouldn't
-                // block the computation
-                // FIXME: i'm not sure that i entirely believe the above comment
-                (value / *graph.edge_weight(edge).unwrap_or(&1.), idx)
-            })
-            .max_by(|a, b| match self.kind {
-                    MorseKind::Descending => a.0.partial_cmp(&b.0).expect("Nan in the values"),
-                    MorseKind::Ascending => b.0.partial_cmp(&a.0).expect("Nan in the values")
-                }
-            )
-            .ok_or(MorseError::NoMaximum{})?;
-        Ok(steepest_neighbor)
+        for &neighbor_idx in neighbors {
+            let node = &self.ordered_points[neighbor_idx];
+            let value = graph.node_weight(node.node).unwrap().value;
+            let edge = graph.find_edge(joining_node.node, node.node).expect("A neighbor wasn't really a neighbor");
+            let grade = match graph.edge_weight(edge) {
+                None => return Err(MorseError::MissingEdgeWeight{}),
+                Some(val) => (value / val).abs()
+            };
+
+            let should_update = match current_max {
+                None => true,
+                Some(max_val) => grade > max_val
+            };
+            if should_update {
+                current_max = Some(grade);
+                max_index = Ok(neighbor_idx);
+            }
+        }
+        max_index
     }
 
     fn merge_cells<T>(&mut self, joining_index: usize, owning_cell: usize, merged_cells: &HashSet<usize>,
