@@ -73,7 +73,7 @@ fn persistence_py(py: Python, nodes: PyList, edges: PyList) -> PyResult<PyTuple>
     Ok(data.into_py_object(py))
 }
 
-impl ToPyObject for morse::MorseComplexData {
+impl ToPyObject for MorseComplexData {
     type ObjectType = PyTuple;
     fn to_py_object(&self, py: Python) -> Self::ObjectType {
         (self.lifetimes.clone(), self.filtration.clone(), self.complex.clone()).to_py_object(py)
@@ -95,5 +95,44 @@ impl<'s> FromPyObject<'s> for LabeledPoint<Vec<f64>> {
             point.push(v);
         };
         Ok(LabeledPoint{id, value, point})
+    }
+}
+
+
+/// A struct that captures the important data about a MorseSmaleComplex
+pub struct MorseComplexData {
+    pub lifetimes: HashMap<i64, f64>,
+    pub filtration: Vec<(f64, i64, i64)>,
+    pub complex: Vec<(i64, i64)>
+}
+
+
+impl morse::MorseSmaleComplex {
+    fn to_data<T>(&self, graph: &UnGraph<LabeledPoint<T>, f64>) -> (MorseComplexData, MorseComplexData) {
+        (self.descending_complex.to_data(graph), self.ascending_complex.to_data(graph))
+    }
+}
+
+impl morse::MorseComplex {
+    fn to_data<T>(&self, graph: &UnGraph<LabeledPoint<T>, f64>) -> MorseComplexData {
+        let lifetimes = self.get_persistence();
+        let filtration = &self.filtration;
+        let lifetimes: HashMap<i64, f64> = lifetimes.iter()
+            .map(|(k,v)| {
+                let id = graph.node_weight(*k).unwrap().id;
+                (id, *v)
+            })
+            .collect();
+        let filtration: Vec<(f64, i64, i64)> = filtration.iter()
+            .map(|filtration| {
+                (filtration.time, graph.node_weight(filtration.destroyed_cell).unwrap().id, graph.node_weight(filtration.owning_cell).unwrap().id)
+            })
+            .collect();
+        let complex: Vec<(i64, i64)> = self.get_complex().iter()
+            .map(|(node, ancestor)| {
+                (graph.node_weight(*node).unwrap().id, graph.node_weight(*ancestor).unwrap().id)
+            })
+            .collect();
+        MorseComplexData{lifetimes, filtration, complex}
     }
 }

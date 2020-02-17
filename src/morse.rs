@@ -141,17 +141,12 @@ pub struct MorseSmaleComplex {
 }
 
 impl MorseSmaleComplex {
-
     /// Constructs a MorseSmaleComplex from the given graph.
     pub fn from_graph<T>(graph: &UnGraph<LabeledPoint<T>, f64>) -> Result<MorseSmaleComplex, MorseError> {
         let ascending_complex = MorseComplex::from_graph(MorseKind::Ascending, &graph)?;
         let descending_complex = MorseComplex::from_graph(MorseKind::Descending, &graph)?;
 
         Ok(MorseSmaleComplex{ascending_complex, descending_complex})
-    }
-
-    pub fn to_data<T>(&self, graph: &UnGraph<LabeledPoint<T>, f64>) -> (MorseComplexData, MorseComplexData) {
-        (self.descending_complex.to_data(graph), self.ascending_complex.to_data(graph))
     }
 }
 
@@ -189,28 +184,6 @@ impl MorseComplex {
         let mut complex = MorseComplex{kind, ordered_points, cells, filtration: vec![]};
         complex.construct_complex(graph)?;
         Ok(complex)
-    }
-
-    pub fn to_data<T>(&self, graph: &UnGraph<LabeledPoint<T>, f64>) -> MorseComplexData {
-        let lifetimes = self.get_persistence();
-        let filtration = &self.filtration;
-        let lifetimes: HashMap<i64, f64> = lifetimes.iter()
-            .map(|(k,v)| {
-                let id = graph.node_weight(*k).unwrap().id;
-                (id, *v)
-            })
-            .collect();
-        let filtration: Vec<(f64, i64, i64)> = filtration.iter()
-            .map(|filtration| {
-                (filtration.time, graph.node_weight(filtration.destroyed_cell).unwrap().id, graph.node_weight(filtration.owning_cell).unwrap().id)
-            })
-            .collect();
-        let complex: Vec<(i64, i64)> = self.get_complex().iter()
-            .map(|(node, ancestor)| {
-                (graph.node_weight(*node).unwrap().id, graph.node_weight(*ancestor).unwrap().id)
-            })
-            .collect();
-        MorseComplexData{lifetimes, filtration, complex}
     }
 
     fn get_ordered_points<T>(kind: MorseKind,
@@ -492,15 +465,6 @@ impl MorseComplex {
         }
         Ok(())
     }
-}
-
-//
-// FIXME: still need more types here
-/// A struct that captures the important data about a MorseSmaleComplex
-pub struct MorseComplexData {
-    pub lifetimes: HashMap<i64, f64>,
-    pub filtration: Vec<(f64, i64, i64)>,
-    pub complex: Vec<(i64, i64)>
 }
 
 
