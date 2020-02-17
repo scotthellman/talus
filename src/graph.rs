@@ -194,7 +194,9 @@ pub fn build_knn_approximate<T: PreMetric + Clone>(points: &[LabeledPoint<T>], k
         }
 
         done = counter <= (precision * points.len() as f64 * k as f64) as i64;
-        if iters > 2000 {
+        if iters > 200 {
+            // TODO: This should probably be a timeout or something, or at least a user-defined
+            // param
             return Err(GraphError::ConvergenceFailure{});
         }
     }
