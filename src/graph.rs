@@ -15,6 +15,10 @@ pub enum GraphError {
     #[error("Could not construct graph due to a KdTree error")]
     GraphConstructionFailure (#[from] kdtree::ErrorKind),
 
+    #[error("Could not construct graph due to a NaN value")]
+    // TODO: If NaNs are bad, why does LabeledPoint allow them?
+    NanInPoints {},
+
     #[error("Requested {k:?} neighbors but only {num_points:?} exist")]
     KTooLarge {
         k: usize,
@@ -153,6 +157,10 @@ fn rejection_sample(count: usize, range: usize, rng: &mut ThreadRng) -> Result<V
 pub fn build_knn_approximate<T: PreMetric + Clone>(points: &[LabeledPoint<T>], k: usize, sample_rate: f64, precision: f64) 
     -> Result<UnGraph<LabeledPoint<T>, f64>, GraphError> {
     // https://www.cs.princeton.edu/cass/papers/www11.pdf
+    let nans_present = points.iter().any(|p| p.value.is_nan());
+    if nans_present {
+        return Err(GraphError::NanInPoints{})
+    }
 
     let mut rng = rand::thread_rng();
     let mut approximate_neighbors = Vec::with_capacity(points.len());
@@ -227,6 +235,10 @@ fn graph_from_neighbordata<T: PreMetric + Clone>(points: &[LabeledPoint<T>], nei
 /// This implementation uses a KD-tree for efficient nearest neighbor querying. This means that it
 /// only works for vectors of real numbers, and can only use the Euclidean metric.
 pub fn build_knn(points: &[LabeledPoint<Vec<f64>>], k: usize) -> Result<UnGraph<LabeledPoint<Vec<f64>>, f64>, GraphError> {
+    let nans_present = points.iter().any(|p| p.value.is_nan());
+    if nans_present {
+        return Err(GraphError::NanInPoints{})
+    }
     let dim = points[0].point.len();
     let mut tree = kdtree::KdTree::new(dim);
     for (i, point) in points.iter().enumerate() {
