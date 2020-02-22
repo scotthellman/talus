@@ -52,6 +52,24 @@ class MorseData:
         return crystals
 
 
+class MorseSmaleComplex:
+
+    def __init__(self, k=8, approximate=False):
+        self.k = k
+        self.approximate = approximate
+
+    def fit_transform(self, X, labels):
+        morse_points = []
+        for i, (point, label) in enumerate(zip(X, labels)):
+            morse_points.append(MorseNode(identifier=i, value=label, vector=list(point)))
+        if self.approximate:
+            self.morse_data = persistence_by_approximate_knn(morse_points, k=self.k)
+        else:
+            self.morse_data = persistence_by_knn(morse_points, k=self.k)
+        return self.morse_data
+
+
+
 def persistence(graph):
     nodes = [n for n in graph]
     edges = [(e[0].identifier, e[1].identifier) for e in graph.edges]
