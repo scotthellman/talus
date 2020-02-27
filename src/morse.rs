@@ -446,24 +446,43 @@ impl MorseComplex {
         self.cells.union(owning_cell, joining_index);
         for &cell in merged_cells {
             if cell != owning_cell {
-                let cell_node = &self.ordered_points[cell];
-                let cell_value = match graph.node_weight(cell_node.node) {
-                    None => return Err(MorseError::MissingNode{node: cell_node.node}),
+                let cell_node = self.ordered_points[cell].node;
+                let cell_value = match graph.node_weight(cell_node) {
+                    None => return Err(MorseError::MissingNode{node: cell_node}),
                     Some(weight) => weight.value
                 };
                 let ancestor = match self.ordered_points[cell].data.as_ref() {
-                    None => return Err(MorseError::MissingData{node: cell_node.node}),
+                    None => return Err(MorseError::MissingData{node: cell_node}),
                     Some(data) => data.ancestor
                 };
 
                 // abs here so that the math works for ascending or descending
                 let lifetime = (cell_value - joining_value).abs();
-                self.ordered_points[cell].data = Some(MorseData{ancestor, lifetime, 
-                    merge_parent: Some(merge_parent)});
+                if lifetime == 0.0 {
+                    // Handle the particularly pernicious case where a series of nodes with the
+                    // exact same value were all adjacent to each other in the same cell. One of
+                    // them may have become a false extrema with lifetime 0, so we need to undo
+                    // that and cleanup their ancestry
+                    self.cleanup_false_extrema(cell, joining_index, cell_node, merge_parent)
+                } else {
+                    self.ordered_points[cell].data = Some(MorseData{ancestor, lifetime,
+                        merge_parent: Some(merge_parent)});
+                }
                 self.cells.union(owning_cell, cell);
             }
         }
         Ok(())
+    }
+
+    fn cleanup_false_extrema(&mut self, left_idx: usize, right_idx: usize, old_parent: NodeIndex, new_parent: NodeIndex) {
+        self.ordered_points[left_idx..right_idx].iter_mut()
+            .filter(|node| match node.data.as_ref() {
+                None => false,
+                Some(data) => data.ancestor == old_parent
+            })
+            .for_each({|node|
+                node.data = Some(MorseData{ancestor: new_parent, lifetime: 0.0, merge_parent: None})
+            })
     }
 }
 
