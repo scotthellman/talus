@@ -1,4 +1,39 @@
 //! Algorithms for analyzing the behavior of a scalar function over a graph.
+//!
+//! What's a Morse complex?
+//! ----
+//!
+//! FIXME: all my terminology is slightly incorrect. That'll be fun to clean up. I believe it's:
+//! complex -> manifold, and filtration -> complex
+//!
+//! Assume we have a graph G whose vertices are labeled with real values, and whose edges are
+//! weighted by the distance between the two vertices. 
+//! In practical terms, computing the Morse complex of G computes a partition of G into
+//! regions dominated by the extrema in G (extrema, in this case, correspond to vertices whose
+//! values are higher or lower than all of their neighbors' values). A vertex is in a particular
+//! extrema's partition if it reaches that extrema by following the line of steepest ascent (or
+//! descent). This is primarily of interest in situations where linest of steepest ascent/descent
+//! are of interest, e.g. in calculating watersheds in topography.
+//!
+//! The Morse complex provides another useful feature - it assigns a value to every extrema in G,
+//! corresponding to how _topologically important_ that extrema is. This value is known as the
+//! persistence (sometimes also referred to as the lifetime) of that extrema. Extrema with lower
+//! persistence values are less important, while the global extrema of the graph will have infinite
+//! lifetimes (by definition). This is of interest when working witnh noisy data - some extrema in
+//! the graph will be spurious, and low persistence values can be indicative of such spuriousness.
+//!
+//! Technical details
+//! ----
+//!
+//! The algorithm implemented here comes from section 4.2 of [Analysis of Scalar Fields over Point Cloud Data by
+//! Chazal et al](https://dl.acm.org/doi/10.5555/1496770.1496881). We specifically follow the
+//! implementation described in [Scaling Up Writing in the Curriculum: Batch Mode Active Learning
+//! for Automated Essay Scoring by Hellman et al](https://dl.acm.org/doi/10.1145/3330430.3333629).
+//!
+//! FIXME: figure out how this ties in https://www.researchgate.net/publication/47544601_Visual_Exploration_of_High_Dimensional_Scalar_Functions
+//!
+//!
+//!
 use petgraph::graph::{UnGraph, NodeIndex, EdgeIndex};
 use petgraph::unionfind::UnionFind;
 

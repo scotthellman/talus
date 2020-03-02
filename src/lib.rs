@@ -2,10 +2,13 @@
 //! =====
 //!
 //! A collection of computational topology algorithms written in Rust, with Python bindings.
-///
-/// The current use case covered by this crate is the creation of kNN graphs, and the computation
-/// of the MorseSmaleComplex of those graphs (and the corresponding persistence values for the
-/// extrema in the graph).
+//!
+//! Talus provides functionality for creating graphs in the graph module, and provides the ability
+//! compute the approximate Morse-Smale complex in the morse module. See the documentation for
+//! those modules for further details and explanations
+//!
+//! Information on Python bindings can be found under the Python module.
+//!
 use std::fs::File;
 use std::f64;
 use std::error::Error;
