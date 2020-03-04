@@ -1,5 +1,36 @@
 //! Algorithms for analyzing the behavior of a scalar function over a graph.
 //!
+//! Overview
+//! ---
+//! In concrete terms, this module provides facilities to partition a graph according to its
+//! extrema. These partitions have a hierarchical relationship, and a quantifiable measure of how
+//! "important" they are. This allows for simplification of the partitions to include only the
+//! partitions that are "important".
+//!
+//! The details are explained below, but to get going:
+//! ``` 
+//! let complex = MorseComplex::from_graph(MorseKind::Descending, &graph).unwrap();
+//!
+//! // Investigate the partitions (by checking what extrema each node is assigned to)
+//! let assignments = complex.get_complex(&self) //FIXME: good naming there
+//! for node in nodes {
+//!     println!("Node {:?} was assigned to partition/extrema {:?}", node, assignments[&node]);
+//! }
+//!
+//! // Investigate how "important" the partitions (equivalently, the extrema) are
+//! let lifetimes = complex.get_persistence();
+//! for node in nodes {
+//!     println!("Lifetime of {:?} was {:?}", node, lifetimes[&node]);
+//! }
+//!
+//! // Investigate the hierarchy of partitions
+//! for step in filtration {
+//!     println!("At time {:?}, partition {:?} merged with {:?}", step.time, step.destroyed_cell, step.owning_cell)
+//! }
+//! ```
+//!
+//!
+//!
 //! What's a Morse complex?
 //! ----
 //!
@@ -25,13 +56,10 @@
 //! Technical details
 //! ----
 //!
-//! The algorithm implemented here comes from section 4.2 of [Analysis of Scalar Fields over Point Cloud Data by
-//! Chazal et al](https://dl.acm.org/doi/10.5555/1496770.1496881). We specifically follow the
+//! The algorithm implemented here comes from section 4.2 of [Analysis of Scalar Fields over Point Cloud Data]
+//! (https://dl.acm.org/doi/10.5555/1496770.1496881). We specifically follow the
 //! implementation described in [Scaling Up Writing in the Curriculum: Batch Mode Active Learning
-//! for Automated Essay Scoring by Hellman et al](https://dl.acm.org/doi/10.1145/3330430.3333629).
-//!
-//! FIXME: figure out how this ties in https://www.researchgate.net/publication/47544601_Visual_Exploration_of_High_Dimensional_Scalar_Functions
-//!
+//! for Automated Essay Scoring](https://dl.acm.org/doi/10.1145/3330430.3333629).
 //!
 //!
 use petgraph::graph::{UnGraph, NodeIndex, EdgeIndex};
