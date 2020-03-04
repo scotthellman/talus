@@ -56,8 +56,8 @@
 //! Technical details
 //! ----
 //!
-//! The algorithm implemented here comes from section 4.2 of [Analysis of Scalar Fields over Point Cloud Data]
-//! (https://dl.acm.org/doi/10.5555/1496770.1496881). We specifically follow the
+//! The algorithm implemented here comes from section 4.2 of [Analysis of Scalar Fields over Point
+//! Cloud Data](https://dl.acm.org/doi/10.5555/1496770.1496881). We specifically follow the
 //! implementation described in [Scaling Up Writing in the Curriculum: Batch Mode Active Learning
 //! for Automated Essay Scoring](https://dl.acm.org/doi/10.1145/3330430.3333629).
 //!
