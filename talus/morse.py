@@ -1,28 +1,10 @@
 # code for calling persistence on a networkx graph
 from . import talus
+from .talus import MorseNode, MorseFiltrationStepPy
 from dataclasses import dataclass, field
 from typing import List
 
-
-@dataclass
-class MorseNode:
-    identifier: int
-    value: field
-    vector: List[float] = field(default_factory=list)
-
-    def __eq__(self, other):
-        return self.identifier == other.identifier
-
-    def __hash__(self):
-        return hash(self.identifier)
-
-
-@dataclass
-class MorseFiltrationStep:
-    lifetime: float
-    destroyed_id: int
-    owning_id: int
-
+MorseFiltrationStep = MorseFiltrationStepPy
 
 class MorseSmaleData:
 
@@ -41,10 +23,8 @@ class MorseData:
     `assignments`: A map of each variable ID to its partition.
     """
 
-    def __init__(self, rust_output):
-        self.lifetimes = rust_output[0]
-        self.filtration = [MorseFiltrationStep(*f) for f in rust_output[1]]
-        self.assignments = {a[0]: a[1] for a in rust_output[2]}
+    def __init__(self, morse_complex):
+        self.complex = morse_complex
 
     def compute_cells_at_lifetime(self, lifetime: float):
         # FIXME: This isn't really correct. It's partitions that survived for at least `lifetime` length
@@ -54,12 +34,12 @@ class MorseData:
         Any partitions that survive for shorter than `lifetime` will be merged into partitions
         that do survive, according to the Morse filtration
         """
-        cells = {k: [] for k, v in self.lifetimes.items() if v > 0}
-        for node, parent in self.assignments.items():
+        cells = {k: [] for k, v in self.complex.lifetimes.items() if v > 0}
+        for node, parent in self.complex.complex.items():
             cells[parent].append(node)
 
         # NOTE: filtration is in sorted order
-        for step in self.filtration:
+        for step in self.complex.filtration:
             if lifetime is not None and step.lifetime > lifetime:
                 break
             cells[step.owning_id].extend(cells[step.destroyed_id])
