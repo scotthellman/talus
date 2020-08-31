@@ -149,6 +149,7 @@ impl morse::MorseComplex {
             })
             .collect();
         let complex: HashMap<i64, i64> = self.get_complex().iter()
+
             .map(|(node, ancestor)| {
                 (graph.node_weight(*node).unwrap().id, graph.node_weight(*ancestor).unwrap().id)
             })
