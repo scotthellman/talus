@@ -1,6 +1,6 @@
 [package]
-name = "talus"
-version = "0.1.0"
+name = "talus_python"
+version = "0.2.3"
 authors = ["Scott Hellman <scotthellman2@gmail.com>"]
 edition = "2018"
 description = "Computational topology in Rust"

@@ -64,7 +64,7 @@ impl std::convert::From<graph::GraphError> for PyErr {
 
 
 #[pymodule]
-fn talus(py: Python, m: &PyModule) -> PyResult<()> {
+fn talus_python(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<MorseNode>()?;
     m.add_class::<MorseFiltrationStepPy>()?;
     m.add_class::<MorseComplexData>()?;

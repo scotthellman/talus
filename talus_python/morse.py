@@ -1,6 +1,6 @@
 # code for calling persistence on a networkx graph
-from . import talus
-from .talus import MorseNode, MorseFiltrationStepPy
+from . import talus_python as talus
+from .talus_python import MorseNode, MorseFiltrationStepPy
 from dataclasses import dataclass, field
 from typing import List
 
