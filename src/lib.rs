@@ -72,6 +72,12 @@ impl<T: Clone> Clone for LabeledPoint<T> {
     }
 }
 
+impl From<python::MorseNode> for LabeledPoint<Vec<f64>> {
+    fn from(item: python::MorseNode) -> Self {
+        LabeledPoint{value: item.value, point: item.vector, id: item.identifier}
+    }
+}
+
 impl LabeledPoint<Vec<f64>> {
     pub fn from_record(record: &StringRecord) -> LabeledPoint<Vec<f64>> {
         let id = record[0].parse::<i64>().expect("Expected an int");
