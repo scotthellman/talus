@@ -16,8 +16,6 @@ use std::path::Path;
 use std::io::BufReader;
 use csv::StringRecord;
 
-#[macro_use] extern crate cpython;
-
 pub mod morse;
 pub mod graph;
 pub mod python;

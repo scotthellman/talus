@@ -1,5 +1,5 @@
 import networkx as nx
-import talus.morse as morse
+import talus_python.morse as morse
 
 # TODO: Make these be proper tests instead of a thrown together script
 
