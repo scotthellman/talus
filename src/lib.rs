@@ -21,6 +21,7 @@ use csv::StringRecord;
 pub mod morse;
 pub mod graph;
 pub mod python;
+pub mod simplex;
 
 
 pub trait Metric {
