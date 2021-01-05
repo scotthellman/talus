@@ -16,12 +16,9 @@ use std::path::Path;
 use std::io::BufReader;
 use csv::StringRecord;
 
-#[macro_use] extern crate cpython;
-
 pub mod morse;
 pub mod graph;
 pub mod python;
-pub mod simplex;
 
 
 pub trait Metric {
@@ -70,6 +67,12 @@ pub struct LabeledPoint<T> {
 impl<T: Clone> Clone for LabeledPoint<T> {
     fn clone(&self) -> Self {
         LabeledPoint{value: self.value, point: self.point.clone(), id: self.id}
+    }
+}
+
+impl From<python::MorseNode> for LabeledPoint<Vec<f64>> {
+    fn from(item: python::MorseNode) -> Self {
+        LabeledPoint{value: item.value, point: item.vector, id: item.identifier}
     }
 }
 
