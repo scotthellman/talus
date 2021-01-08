@@ -18,6 +18,7 @@ use csv::StringRecord;
 
 pub mod morse;
 pub mod graph;
+pub mod simplex;
 pub mod python;
 
 

@@ -1,12 +1,17 @@
+use std::cmp::Reverse;
+
 fn choose(n: usize, k: usize) -> usize {
-    if k == 0 {
-        return 1;
+    if k > n {
+        return 0
+    };
+
+    let mut numerator = 1;
+    let mut denominator = 1;
+    for i in 1..k+1 {
+        numerator *= n + 1 - i;
+        denominator *= i;
     }
-    // this could be tail recursive but tbh i'm going to memoize it anyway so whatever
-    if k > n-k {
-        return n * choose(n, n-k-1) / (n-k)
-    }
-    n * choose(n, k-1) / k
+    numerator / denominator
 }
 
 fn binary_search_for_cns(n: CNS, d: Dimension, limit: usize) -> CNS {
@@ -34,7 +39,7 @@ fn binary_search_for_cns(n: CNS, d: Dimension, limit: usize) -> CNS {
 }
 
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct CNS(usize);
 impl From<usize> for CNS {
     fn from(val: usize) -> CNS {
@@ -62,6 +67,7 @@ impl From<Dimension> for usize {
 }
 
 
+#[derive(Debug)]
 struct Simplex {
     // TODO: this is related to the LabeledPoint
     vertices: Vec<usize>,
@@ -74,6 +80,8 @@ impl Simplex {
         let mut sorted_vertices: Vec<usize> = vertices.iter()
             .cloned()
             .collect();
+        // nb the paper sorts high to low, but we do low to high
+        // this lets dimensionality align with index
         sorted_vertices.sort();
         Simplex{vertices: sorted_vertices, value}
     }
@@ -81,7 +89,7 @@ impl Simplex {
     // FIXME: this can be done as a proper conversion (other way can't be)
     fn to_cns(&self) -> CNS {
         let value: usize = self.vertices.iter().enumerate()
-            .map(|(i, &v)| choose(i, v))
+            .map(|(d, &v)| choose(v, d+1))
             .sum();
         CNS::from(value)
     }
@@ -91,13 +99,13 @@ impl Simplex {
 impl CNS {
     fn to_vector(self, dim: Dimension) -> Vec<usize> {
         let dim = usize::from(dim);
-        let mut vertices = Vec::<usize>::with_capacity(dim);
+        let mut vertices: Vec<usize> = std::iter::repeat(0).take(dim+1).collect();
         let mut n = usize::from(self);
         let mut limit = if n > dim {n} else {dim};
 
         for d in (0..dim+1).rev() {
-            limit = usize::from(binary_search_for_cns(self, Dimension::from(d), limit));
-            vertices.push(limit);
+            limit = usize::from(binary_search_for_cns(CNS::from(n), Dimension::from(d), limit));
+            vertices[d] = limit;
             n -= choose(limit, d+1)
         }
         vertices
@@ -119,6 +127,6 @@ mod tests {
     #[test]
     fn test_cns_isomorphism() {
         let simplex = Simplex::construct_simplex(&vec![5, 3, 1], 3.0);
-        assert_eq!(simplex.vertices, simplex.to_cns().to_vector(Dimension::from(3)))
+        assert_eq!(simplex.vertices, simplex.to_cns().to_vector(Dimension::from(2)))
     }
 }
