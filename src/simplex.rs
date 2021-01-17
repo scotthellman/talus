@@ -39,7 +39,7 @@ fn binary_search_for_cns(n: CNS, d: Dimension, limit: usize) -> CNS {
 }
 
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct CNS(usize);
 impl From<usize> for CNS {
     fn from(val: usize) -> CNS {
@@ -67,7 +67,7 @@ impl From<Dimension> for usize {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct Simplex {
     // TODO: this is related to the LabeledPoint
     vertices: Vec<usize>,
@@ -123,10 +123,28 @@ impl CNS {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
+    use proptest::collection::hash_set;
 
-    #[test]
-    fn test_cns_isomorphism() {
-        let simplex = Simplex::construct_simplex(&vec![5, 3, 1], 3.0);
-        assert_eq!(simplex.vertices, simplex.to_cns().to_vector(Dimension::from(2)))
+    //fn vec_from_length(max_val: usize, max_length: usize) -> impl Strategy<Value = Vec<usize>> {
+    //    hash_set(0..max_val, 1..max_length).iter().collect()
+    //}
+
+    proptest! {
+        #[test]
+        // FIXME: need to use bigints + memoize or something to handle reasonable values of n
+        fn test_cns_isomorphism_from_int_and_dim(n in 0usize..20, d in 1usize..3, v in -100f64..100.0) {
+            let n = CNS::from(n);
+            let d = Dimension::from(d);
+            prop_assert_eq!(n, n.to_simplex(d, v).to_cns());
+        }
+
+        //#[test]
+        // FIXME: need to use bigints + memoize or something to handle reasonable values of n
+        //fn test_cns_isomorphism_from_simplex(n in 0usize..20, d in 1usize..3, v in -100f64..100.0) {
+            //let n = CNS::from(n);
+            //let d = Dimension::from(d);
+            //prop_assert_eq!(n, n.to_simplex(d, v).to_cns());
+        //}
     }
 }
