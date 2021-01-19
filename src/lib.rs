@@ -20,6 +20,7 @@ pub mod morse;
 pub mod graph;
 pub mod simplex;
 pub mod python;
+pub mod binomial;
 
 
 pub trait Metric {
