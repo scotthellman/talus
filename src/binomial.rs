@@ -1,9 +1,9 @@
-struct BinomialCoeff {
+pub struct BinomialCoeff {
     coeffs:  Vec<Vec<usize>>
 }
 
 impl BinomialCoeff {
-    fn construct_for_max_k_and_n(n: usize, k: usize) -> Self {
+    pub fn construct_for_max_k_and_n(n: usize, k: usize) -> Self {
         let mut coeffs: Vec<Vec<usize>> = Vec::with_capacity(n);
         for i in 0..n+1 {
             let row = (0..k+1).map(|j| {
@@ -22,7 +22,7 @@ impl BinomialCoeff {
         BinomialCoeff{coeffs}
     }
 
-    fn binomial(&self, n: usize, k: usize) -> usize {
+    pub fn binomial(&self, n: usize, k: usize) -> usize {
         self.coeffs.get(n).map_or(0, |row| *row.get(k).unwrap_or(&0))
     }
 }
