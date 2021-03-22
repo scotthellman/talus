@@ -21,6 +21,7 @@ pub mod graph;
 pub mod simplex;
 pub mod python;
 pub mod binomial;
+pub mod rips;
 
 
 pub trait Metric {
