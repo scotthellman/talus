@@ -1,5 +1,6 @@
 use super::simplex::{Simplex, Dimension, CNS, SimplexConverter};
 use std::collections::{HashMap, HashSet};
+use itertools::Itertools;
 
 
 // FIXME: notation issue, i say lifetime when birthtime is more accurate
@@ -11,16 +12,18 @@ struct RichSimplex {
     lifetime: f64
 }
 
-fn construct_rich_simplex(vertices: &[usize], lifetime: f64, converter: SimplexConverter) -> RichSimplex {
-    let simplex = converter.simplex_to_cns(Simplex::construct_simplex(vertices, lifetime));
-    let dimension = Dimension::from(vertices.len());
-    RichSimplex{simplex, dimension, lifetime}
+impl RichSimplex {
+    fn from_vertices(vertices: &[usize], lifetime: f64, converter: SimplexConverter) -> RichSimplex {
+        let simplex = converter.simplex_to_cns(Simplex::construct_simplex(vertices, lifetime));
+        let dimension = Dimension::from(vertices.len());
+        RichSimplex{simplex, dimension, lifetime}
+    }
 }
 
-fn higher_order_edge_creation(vertices: &[usize], lifetime: f64, converter: SimplexConverter,
-                              neighbors: HashMap<CNS, HashSet<CNS>>) -> Vec<RichSimplex> {
+fn find_all_cofaces(vertices: &[usize], lifetime: f64, converter: SimplexConverter, max_dim: Dimension,
+                       neighbors: HashMap<CNS, HashSet<CNS>>) -> Vec<RichSimplex> {
     // TODO: throttle this according to max dim
-    let mut previous_neighbors = None;
+    let mut previous_neighbors: Option<HashSet<CNS>> = None;
     loop {
         let mut common_neighbors: HashSet<CNS> = vertices.iter()
             .map(|v| neighbors[v])
@@ -38,8 +41,27 @@ fn higher_order_edge_creation(vertices: &[usize], lifetime: f64, converter: Simp
         }
         previous_neighbors = Some(common_neighbors.clone());
     }
-    // TODO: filter those down to all subfaces
+    match previous_neighbors {
+        None => vec![], // FIXME: should this ever happen? or is it an error?
+        Some(clique) => {
+            let original_set: HashSet<CNS> = vertices.iter().collect();
+            let neighborhood = clique.difference(&original_set);
+            (0..max_dim-vertices.len()).map(|k| {
+                neighborhood.iter()
+                    .permutations(k)
+                    .map(|mut ns| {
+                        // FIXME: does this work
+                        ns.extend(vertices);
+                        RichSimplex::from_vertices(&ns, lifetime, converter)
+                    })
+                    .collect()
+            })
+            .flatten()
+            .collect()
+        }
+    }
 }
+
 
 fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension) -> Vec<RichSimplex> {
     // TODO: there's a faster algorithm out there
@@ -88,30 +110,11 @@ fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension) -> Vec<RichSimplex> {
         // the (row, col) edge has been created
         neighbor_lookup[row].insert(col);
         neighbor_lookup[col].insert(row);
-        let rich_simplex = construct_rich_simplex(&[col, row], distance, converter);
+        let rich_simplex = RichSimplex::from_vertices(&[col, row], distance, converter);
         simplices.push(rich_simplex);
 
 
         // now deal with the higher-order simplices
-
+        simplices.extend(find_all_cofaces(&[col, row], distance, converter, max_dim, neighbor_lookup));
     }
-
-    for distance in unique_distances {
-        if distance == 0 {continue};
-
-        let new_lines = distances.iter().enumerate()
-            .map(|i, row| {
-                row.iter().enumerate().skip(i+1).map {|j, pairwise_dist|
-                    if pairwise_dist == distance {
-                        construct_simplex(&[i, j+i+1], pairwise_distance, converter)
-                    } else {
-                        None
-                    }
-                }
-            })
-           .flatten()
-           .filter_map()
-           .collect();
-    }
-
 }
