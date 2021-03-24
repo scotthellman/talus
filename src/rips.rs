@@ -13,15 +13,15 @@ struct RichSimplex {
 }
 
 impl RichSimplex {
-    fn from_vertices(vertices: &[usize], lifetime: f64, converter: SimplexConverter) -> RichSimplex {
+    fn from_vertices(vertices: &[usize], lifetime: f64, converter: &SimplexConverter) -> RichSimplex {
         let simplex = converter.simplex_to_cns(&Simplex::construct_simplex(vertices, lifetime));
         let dimension = Dimension::from(vertices.len());
         RichSimplex{simplex, dimension, lifetime}
     }
 }
 
-fn find_all_cofaces(vertices: &[usize], lifetime: f64, converter: SimplexConverter, max_dim: Dimension,
-                       neighbors: HashMap<usize, HashSet<usize>>) -> Vec<RichSimplex> {
+fn find_all_cofaces(vertices: &[usize], lifetime: f64, converter: &SimplexConverter, max_dim: Dimension,
+                       neighbors: &HashMap<usize, HashSet<usize>>) -> Vec<RichSimplex> {
     // TODO: throttle this according to max dim
     let mut previous_neighbors: Option<HashSet<usize>> = None;
     loop {
@@ -34,8 +34,9 @@ fn find_all_cofaces(vertices: &[usize], lifetime: f64, converter: SimplexConvert
                 }
             })
             .unwrap_or_else(HashSet::new);
-        if let Some(previous) = previous_neighbors{
-            if previous == common_neighbors {
+        if let Some(previous) = previous_neighbors.as_ref(){
+            // TODO: is there a cleaner solution than cloning?
+            if previous.clone() == common_neighbors {
                 break;
             }
         }
@@ -45,9 +46,9 @@ fn find_all_cofaces(vertices: &[usize], lifetime: f64, converter: SimplexConvert
         None => vec![], // FIXME: should this ever happen? or is it an error?
         Some(clique) => {
             let original_set: HashSet<usize> = vertices.iter().copied().collect();
-            let neighborhood = clique.difference(&original_set);
+            let neighborhood: HashSet<usize> = clique.difference(&original_set).copied().collect();
             (0..usize::from(max_dim)-vertices.len()).map(|k| {
-                neighborhood.permutations(k)
+                neighborhood.iter().permutations(k)
                     .map(|ns| {
                         let mut face_vertices: Vec<usize> = ns.into_iter().copied().collect();
                         face_vertices.extend(vertices);
@@ -70,7 +71,7 @@ fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension) -> Vec<RichSimplex> {
         .map(|(i, row)| {
             row.iter().enumerate()
                .skip(i+1)
-               .map(|(j, &val)| {
+               .map(move |(j, &val)| {  // NOTE to my rusty-rust self, this is because we need to move i
                    (val, i, j)
                })
         })
@@ -99,7 +100,7 @@ fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension) -> Vec<RichSimplex> {
     // So we need to be able to quickly track neighbors of each vertex
     // (One could say a graph library could do this for us, but that feels heavyweight)
 
-    let neighbor_lookup: HashMap<usize, HashSet<usize>> = simplices.iter()
+    let mut neighbor_lookup: HashMap<usize, HashSet<usize>> = simplices.iter()
         .map(|s| {
             (usize::from(s.simplex), HashSet::with_capacity(distances.len()))
         })
@@ -107,14 +108,14 @@ fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension) -> Vec<RichSimplex> {
 
     for (distance, row, col) in labeled_indices {
         // the (row, col) edge has been created
-        neighbor_lookup[&row].insert(col);
-        neighbor_lookup[&col].insert(row);
-        let rich_simplex = RichSimplex::from_vertices(&[col, row], distance, converter);
+        neighbor_lookup.get_mut(&row).unwrap().insert(col);
+        neighbor_lookup.get_mut(&col).unwrap().insert(row);
+        let rich_simplex = RichSimplex::from_vertices(&[col, row], distance, &converter);
         simplices.push(rich_simplex);
 
 
         // now deal with the higher-order simplices
-        simplices.extend(find_all_cofaces(&[col, row], distance, converter, max_dim, neighbor_lookup));
+        simplices.extend(find_all_cofaces(&[col, row], distance, &converter, max_dim, &neighbor_lookup));
     }
     simplices
 }

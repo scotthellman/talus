@@ -82,7 +82,7 @@ impl From<CNS> for usize {
    }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Dimension(usize);
 impl From<usize> for Dimension {
     fn from(val: usize) -> Dimension {
