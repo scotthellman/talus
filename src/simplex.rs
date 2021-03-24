@@ -1,25 +1,25 @@
 use std::cmp::Reverse;
 use super::binomial::BinomialCoeff;
 
-struct SimplexConverter {
+pub struct SimplexConverter {
     pub binomial: BinomialCoeff,
     vertex_count: usize
 }
 
 impl SimplexConverter {
-    fn construct_for_vertex_count_and_dim(vertex_count: usize, dim: usize) -> Self {
+    pub fn construct_for_vertex_count_and_dim(vertex_count: usize, dim: usize) -> Self {
         let binomial = BinomialCoeff::construct_for_max_k_and_n(vertex_count+1, dim+1);
         SimplexConverter{binomial, vertex_count}
     }
 
-    fn simplex_to_cns(&self, simplex: &Simplex) -> CNS {
+    pub fn simplex_to_cns(&self, simplex: &Simplex) -> CNS {
         let value: usize = simplex.vertices.iter().enumerate()
             .map(|(d, &v)| self.binomial.binomial(v, d+1))
             .sum();
         CNS::from(value)
     }
 
-    fn cns_to_vector(&self, n: CNS, dim: Dimension) -> Vec<usize> {
+    pub fn cns_to_vector(&self, n: CNS, dim: Dimension) -> Vec<usize> {
         let dim = usize::from(dim);
         let mut vertices: Vec<usize> = std::iter::repeat(0).take(dim+1).collect();
         let mut n = usize::from(n);
@@ -33,7 +33,7 @@ impl SimplexConverter {
         vertices
     }
 
-    fn cns_to_simplex(&self, n: CNS, dim: Dimension, value: f64) -> Simplex {
+    pub fn cns_to_simplex(&self, n: CNS, dim: Dimension, value: f64) -> Simplex {
         Simplex {
             vertices: self.cns_to_vector(n, dim),
             value
@@ -68,8 +68,8 @@ impl SimplexConverter {
 
 
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct CNS(usize);
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub struct CNS(usize);
 impl From<usize> for CNS {
     fn from(val: usize) -> CNS {
         CNS(val)
@@ -82,7 +82,8 @@ impl From<CNS> for usize {
    }
 }
 
-struct Dimension(usize);
+#[derive(Debug, PartialEq, Eq)]
+pub struct Dimension(usize);
 impl From<usize> for Dimension {
     fn from(val: usize) -> Dimension {
         Dimension(val)
@@ -97,7 +98,7 @@ impl From<Dimension> for usize {
 
 
 #[derive(Debug, PartialEq)]
-struct Simplex {
+pub struct Simplex {
     // TODO: this is related to the LabeledPoint
     vertices: Vec<usize>,
     value: f64,
@@ -105,7 +106,7 @@ struct Simplex {
 
 
 impl Simplex {
-    fn construct_simplex(vertices: &[usize], value: f64) -> Self {
+    pub fn construct_simplex(vertices: &[usize], value: f64) -> Self {
         let mut sorted_vertices: Vec<usize> = vertices.iter()
             .cloned()
             .collect();

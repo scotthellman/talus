@@ -5,7 +5,7 @@ use itertools::Itertools;
 
 // FIXME: notation issue, i say lifetime when birthtime is more accurate
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Debug)]
 struct RichSimplex {
     simplex: CNS,
     dimension: Dimension,
@@ -14,26 +14,26 @@ struct RichSimplex {
 
 impl RichSimplex {
     fn from_vertices(vertices: &[usize], lifetime: f64, converter: SimplexConverter) -> RichSimplex {
-        let simplex = converter.simplex_to_cns(Simplex::construct_simplex(vertices, lifetime));
+        let simplex = converter.simplex_to_cns(&Simplex::construct_simplex(vertices, lifetime));
         let dimension = Dimension::from(vertices.len());
         RichSimplex{simplex, dimension, lifetime}
     }
 }
 
 fn find_all_cofaces(vertices: &[usize], lifetime: f64, converter: SimplexConverter, max_dim: Dimension,
-                       neighbors: HashMap<CNS, HashSet<CNS>>) -> Vec<RichSimplex> {
+                       neighbors: HashMap<usize, HashSet<CNS>>) -> Vec<RichSimplex> {
     // TODO: throttle this according to max dim
     let mut previous_neighbors: Option<HashSet<CNS>> = None;
     loop {
         let mut common_neighbors: HashSet<CNS> = vertices.iter()
-            .map(|v| neighbors[v])
+            .filter_map(|v| neighbors.get(v))
             .fold(None, |acc, x| {
                 match acc {
-                    None => x.clone(),
-                    Some(candidates) => candidates.intersection(x)
+                    None => Some(x.clone()),
+                    Some(candidates) => Some(candidates.intersection(x).collect())
                 }
             })
-            .collect();
+            .unwrap_or_else(HashSet::new);
         if let Some(previous) = previous_neighbors{
             if previous == common_neighbors {
                 break;
@@ -117,4 +117,5 @@ fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension) -> Vec<RichSimplex> {
         // now deal with the higher-order simplices
         simplices.extend(find_all_cofaces(&[col, row], distance, converter, max_dim, neighbor_lookup));
     }
+    simplices
 }
