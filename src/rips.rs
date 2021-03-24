@@ -21,16 +21,16 @@ impl RichSimplex {
 }
 
 fn find_all_cofaces(vertices: &[usize], lifetime: f64, converter: SimplexConverter, max_dim: Dimension,
-                       neighbors: HashMap<usize, HashSet<CNS>>) -> Vec<RichSimplex> {
+                       neighbors: HashMap<usize, HashSet<usize>>) -> Vec<RichSimplex> {
     // TODO: throttle this according to max dim
-    let mut previous_neighbors: Option<HashSet<CNS>> = None;
+    let mut previous_neighbors: Option<HashSet<usize>> = None;
     loop {
-        let mut common_neighbors: HashSet<CNS> = vertices.iter()
+        let common_neighbors: HashSet<usize> = vertices.iter()
             .filter_map(|v| neighbors.get(v))
             .fold(None, |acc, x| {
                 match acc {
                     None => Some(x.clone()),
-                    Some(candidates) => Some(candidates.intersection(x).collect())
+                    Some(candidates) => Some(candidates.intersection(x).copied().collect())
                 }
             })
             .unwrap_or_else(HashSet::new);
@@ -44,17 +44,16 @@ fn find_all_cofaces(vertices: &[usize], lifetime: f64, converter: SimplexConvert
     match previous_neighbors {
         None => vec![], // FIXME: should this ever happen? or is it an error?
         Some(clique) => {
-            let original_set: HashSet<CNS> = vertices.iter().collect();
+            let original_set: HashSet<usize> = vertices.iter().copied().collect();
             let neighborhood = clique.difference(&original_set);
-            (0..max_dim-vertices.len()).map(|k| {
-                neighborhood.iter()
-                    .permutations(k)
-                    .map(|mut ns| {
-                        // FIXME: does this work
-                        ns.extend(vertices);
-                        RichSimplex::from_vertices(&ns, lifetime, converter)
+            (0..usize::from(max_dim)-vertices.len()).map(|k| {
+                neighborhood.permutations(k)
+                    .map(|ns| {
+                        let mut face_vertices: Vec<usize> = ns.into_iter().copied().collect();
+                        face_vertices.extend(vertices);
+                        RichSimplex::from_vertices(&face_vertices, lifetime, converter)
                     })
-                    .collect()
+                    .collect::<Vec<RichSimplex>>()
             })
             .flatten()
             .collect()
@@ -80,7 +79,7 @@ fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension) -> Vec<RichSimplex> {
     labeled_indices.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
     // First we need a converter to do simplex->cns conversion
-    let converter = SimplexConverter(distances.len(), max_dim);
+    let converter = SimplexConverter::construct_for_vertex_count_and_dim(distances.len(), usize::from(max_dim));
 
     // build 0-dimensional simplices
     let mut simplices: Vec<RichSimplex> = (0..distances.len())
@@ -100,16 +99,16 @@ fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension) -> Vec<RichSimplex> {
     // So we need to be able to quickly track neighbors of each vertex
     // (One could say a graph library could do this for us, but that feels heavyweight)
 
-    let neighbor_lookup: HashMap<CNS, HashSet<CNS>> = simplices.iter()
+    let neighbor_lookup: HashMap<usize, HashSet<usize>> = simplices.iter()
         .map(|s| {
-            (s.simplex, HashSet::with_capacity(distances.len()))
+            (usize::from(s.simplex), HashSet::with_capacity(distances.len()))
         })
         .collect();
 
     for (distance, row, col) in labeled_indices {
         // the (row, col) edge has been created
-        neighbor_lookup[row].insert(col);
-        neighbor_lookup[col].insert(row);
+        neighbor_lookup[&row].insert(col);
+        neighbor_lookup[&col].insert(row);
         let rich_simplex = RichSimplex::from_vertices(&[col, row], distance, converter);
         simplices.push(rich_simplex);
 
