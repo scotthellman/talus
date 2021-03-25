@@ -113,9 +113,25 @@ fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension) -> Vec<RichSimplex> {
         let rich_simplex = RichSimplex::from_vertices(&[col, row], distance, &converter);
         simplices.push(rich_simplex);
 
-
         // now deal with the higher-order simplices
         simplices.extend(find_all_cofaces(&[col, row], distance, &converter, max_dim, &neighbor_lookup));
     }
     simplices
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+    use proptest::collection::hash_set;
+
+    #[test]
+    fn test_rips_small() {
+        let dists = vec![vec![0., 1., 1., 2.],
+                         vec![1., 0., 2., 1.],
+                         vec![1., 2., 0., 1.],
+                         vec![2., 1., 1., 0.]];
+        let complex = rips(dists, Dimension::from(4));
+        assert_eq!(complex.len(), 12);
+    }
 }

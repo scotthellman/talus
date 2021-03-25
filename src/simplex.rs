@@ -124,6 +124,7 @@ mod tests {
     use proptest::prelude::*;
     use proptest::collection::hash_set;
 
+    #[test]
     fn test_cns_paper_case_38() {
         let converter = SimplexConverter::construct_for_vertex_count_and_dim(10, 10);
         let n = CNS::from(38);
@@ -134,6 +135,7 @@ mod tests {
         assert_eq!(new_n ,n);
     }
 
+    #[test]
     fn test_cns_paper_case_0() {
         let converter = SimplexConverter::construct_for_vertex_count_and_dim(10, 10);
         let n = CNS::from(0);
