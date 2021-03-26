@@ -15,14 +15,15 @@ struct RichSimplex {
 impl RichSimplex {
     fn from_vertices(vertices: &[usize], lifetime: f64, converter: &SimplexConverter) -> RichSimplex {
         let simplex = converter.simplex_to_cns(&Simplex::construct_simplex(vertices, lifetime));
-        let dimension = Dimension::from(vertices.len());
+        let dimension = Dimension::from(vertices.len() - 1);
         RichSimplex{simplex, dimension, lifetime}
     }
 }
 
-fn find_all_cofaces(vertices: &[usize], lifetime: f64, converter: &SimplexConverter, max_dim: Dimension,
+fn insert_vertices(vertices: &[usize], lifetime: f64, converter: &SimplexConverter, max_dim: Dimension,
                        neighbors: &HashMap<usize, HashSet<usize>>) -> Vec<RichSimplex> {
     // TODO: throttle this according to max dim
+    println!("Finding cofaces of {:?} given these neighbors {:?}", vertices, neighbors);
     let mut previous_neighbors: Option<HashSet<usize>> = None;
     loop {
         let common_neighbors: HashSet<usize> = vertices.iter()
@@ -45,15 +46,20 @@ fn find_all_cofaces(vertices: &[usize], lifetime: f64, converter: &SimplexConver
     match previous_neighbors {
         None => vec![], // FIXME: should this ever happen? or is it an error?
         Some(clique) => {
+            println!("Total clique is {:?}", clique);
+            if clique.len() == 0 {
+                return vec![];
+            }
             let original_set: HashSet<usize> = vertices.iter().copied().collect();
             let neighborhood: HashSet<usize> = clique.difference(&original_set).copied().collect();
-            (0..usize::from(max_dim)-vertices.len()).map(|k| {
-                neighborhood.iter().permutations(k)
+            (0..usize::from(max_dim)-vertices.len()+1).map(|k| {
+                neighborhood.iter().combinations(k)
                     .map(|ns| {
                         let mut face_vertices: Vec<usize> = ns.into_iter().copied().collect();
                         face_vertices.extend(vertices);
                         RichSimplex::from_vertices(&face_vertices, lifetime, converter)
                     })
+                    .inspect(|x| println!("{:?}", x))
                     .collect::<Vec<RichSimplex>>()
             })
             .flatten()
@@ -107,14 +113,17 @@ fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension) -> Vec<RichSimplex> {
         .collect();
 
     for (distance, row, col) in labeled_indices {
-        // the (row, col) edge has been created
         neighbor_lookup.get_mut(&row).unwrap().insert(col);
         neighbor_lookup.get_mut(&col).unwrap().insert(row);
+
         let rich_simplex = RichSimplex::from_vertices(&[col, row], distance, &converter);
         simplices.push(rich_simplex);
 
-        // now deal with the higher-order simplices
-        simplices.extend(find_all_cofaces(&[col, row], distance, &converter, max_dim, &neighbor_lookup));
+        let cofaces = insert_vertices(&[col, row], distance, &converter, max_dim, &neighbor_lookup);
+        println!("cofaces {:?}", cofaces);
+        //simplices.extend(find_all_cofaces(&[col, row], distance, &converter, max_dim, &neighbor_lookup));
+        simplices.extend(cofaces);
+        println!("{:?} simplices - {:?}", simplices.len(), simplices);
     }
     simplices
 }
@@ -131,7 +140,12 @@ mod tests {
                          vec![1., 0., 2., 1.],
                          vec![1., 2., 0., 1.],
                          vec![2., 1., 1., 0.]];
+        // 4 choose 1 = 4
+        // 4 choose 2 = 6
+        // 4 choose 3 = 4
+        // 4 choose 4 = 1
+        // Sums to 15
         let complex = rips(dists, Dimension::from(4));
-        assert_eq!(complex.len(), 12);
+        assert_eq!(complex.len(), 15);
     }
 }
