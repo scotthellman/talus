@@ -41,6 +41,8 @@ impl SimplexConverter {
     }
 
     fn binary_search_for_cns(&self, n: CNS, d: Dimension, limit: usize) -> CNS {
+        // FIXME: there's an issue here where if mid is too big for self.binomial
+        // then we always return limit
         let d = usize::from(d);
         let n = usize::from(n);
 
@@ -126,7 +128,7 @@ mod tests {
 
     #[test]
     fn test_cns_paper_case_38() {
-        let converter = SimplexConverter::construct_for_vertex_count_and_dim(10, 10);
+        let converter = SimplexConverter::construct_for_vertex_count_and_dim(20, 10);
         let n = CNS::from(38);
         let d = Dimension::from(2);
         let simplex = converter.cns_to_simplex(n, d, 2.0);
