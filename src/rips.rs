@@ -5,7 +5,7 @@ use itertools::Itertools;
 
 // FIXME: notation issue, i say lifetime when birthtime is more accurate
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct RichSimplex {
     simplex: CNS,
     dimension: Dimension,
@@ -24,9 +24,20 @@ fn insert_vertices(vertices: &[usize], lifetime: f64, converter: &SimplexConvert
                        neighbors: &HashMap<usize, HashSet<usize>>) -> Vec<RichSimplex> {
     // TODO: throttle this according to max dim
     println!("Finding cofaces of {:?} given these neighbors {:?}", vertices, neighbors);
-    let mut previous_neighbors: Option<HashSet<usize>> = None;
-    loop {
-        let common_neighbors: HashSet<usize> = vertices.iter()
+    let mut simplices: Vec<RichSimplex> = Vec::with_capacity(5); // FIXME: probably a better heuristic for capacity
+    // need to do this in a constructive manner
+    let mut queue: Vec<Vec<usize>> = vec![vertices.iter().copied().collect()];
+    while let Some(current) = queue.pop() {
+        if current.len() > usize::from(max_dim) {
+            continue;
+        }
+        let current_simplex = RichSimplex::from_vertices(&current, lifetime, converter);
+        let unseen = simplices.iter().all(|s| s != &current_simplex);
+        if !unseen {
+            continue;
+        }
+        simplices.push(current_simplex);
+        let common_neighbors: HashSet<usize> = current.iter()
             .filter_map(|v| neighbors.get(v))
             .fold(None, |acc, x| {
                 match acc {
@@ -35,37 +46,16 @@ fn insert_vertices(vertices: &[usize], lifetime: f64, converter: &SimplexConvert
                 }
             })
             .unwrap_or_else(HashSet::new);
-        if let Some(previous) = previous_neighbors.as_ref(){
-            // TODO: is there a cleaner solution than cloning?
-            if previous.clone() == common_neighbors {
-                break;
-            }
-        }
-        previous_neighbors = Some(common_neighbors.clone());
-    }
-    match previous_neighbors {
-        None => vec![], // FIXME: should this ever happen? or is it an error?
-        Some(clique) => {
-            println!("Total clique is {:?}", clique);
-            if clique.len() == 0 {
-                return vec![];
-            }
-            let original_set: HashSet<usize> = vertices.iter().copied().collect();
-            let neighborhood: HashSet<usize> = clique.difference(&original_set).copied().collect();
-            (0..usize::from(max_dim)-vertices.len()+1).map(|k| {
-                neighborhood.iter().combinations(k)
-                    .map(|ns| {
-                        let mut face_vertices: Vec<usize> = ns.into_iter().copied().collect();
-                        face_vertices.extend(vertices);
-                        RichSimplex::from_vertices(&face_vertices, lifetime, converter)
-                    })
-                    .inspect(|x| println!("{:?}", x))
-                    .collect::<Vec<RichSimplex>>()
+        let mut new_vertices: Vec<Vec<usize>> = common_neighbors.iter()
+            .map(|v| {
+                let mut new_vertices: Vec<usize> = current.iter().copied().collect();
+                new_vertices.push(*v);
+                new_vertices
             })
-            .flatten()
-            .collect()
-        }
+            .collect();
+        queue.append(&mut new_vertices);
     }
+    simplices
 }
 
 
@@ -116,8 +106,8 @@ fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension) -> Vec<RichSimplex> {
         neighbor_lookup.get_mut(&row).unwrap().insert(col);
         neighbor_lookup.get_mut(&col).unwrap().insert(row);
 
-        let rich_simplex = RichSimplex::from_vertices(&[col, row], distance, &converter);
-        simplices.push(rich_simplex);
+        //let rich_simplex = RichSimplex::from_vertices(&[col, row], distance, &converter);
+        //simplices.push(rich_simplex);
 
         let cofaces = insert_vertices(&[col, row], distance, &converter, max_dim, &neighbor_lookup);
         println!("cofaces {:?}", cofaces);
