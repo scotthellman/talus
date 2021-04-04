@@ -28,7 +28,7 @@ fn insert_vertices(vertices: &[usize], lifetime: f64, converter: &SimplexConvert
     // need to do this in a constructive manner
     let mut queue: Vec<Vec<usize>> = vec![vertices.iter().copied().collect()];
     while let Some(current) = queue.pop() {
-        if current.len() > usize::from(max_dim) {
+        if current.len() > usize::from(max_dim)+1 {
             continue;
         }
         let current_simplex = RichSimplex::from_vertices(&current, lifetime, converter);
@@ -59,7 +59,7 @@ fn insert_vertices(vertices: &[usize], lifetime: f64, converter: &SimplexConvert
 }
 
 
-fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension) -> Vec<RichSimplex> {
+fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension, max_distance: Option<f64>) -> Vec<RichSimplex> {
     // TODO: there's a faster algorithm out there
 
     // We're going to iterate over ever cell in distances in ascending distance order
@@ -103,6 +103,11 @@ fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension) -> Vec<RichSimplex> {
         .collect();
 
     for (distance, row, col) in labeled_indices {
+        if let Some(max_dist) = max_distance {
+            if distance > max_dist {
+                break;
+            }
+        }
         neighbor_lookup.get_mut(&row).unwrap().insert(col);
         neighbor_lookup.get_mut(&col).unwrap().insert(row);
 
@@ -135,7 +140,27 @@ mod tests {
         // 4 choose 3 = 4
         // 4 choose 4 = 1
         // Sums to 15
-        let complex = rips(dists, Dimension::from(4));
+        let complex = rips(dists, Dimension::from(4), None);
         assert_eq!(complex.len(), 15);
+    }
+
+    #[test]
+    fn test_rips_small_max_dist() {
+        let dists = vec![vec![0., 1., 1., 2.],
+                         vec![1., 0., 2., 1.],
+                         vec![1., 2., 0., 1.],
+                         vec![2., 1., 1., 0.]];
+        let complex = rips(dists, Dimension::from(4), Some(1.0));
+        assert_eq!(complex.len(), 8);
+    }
+
+    #[test]
+    fn test_rips_small_max_dim() {
+        let dists = vec![vec![0., 1., 1., 2.],
+                         vec![1., 0., 2., 1.],
+                         vec![1., 2., 0., 1.],
+                         vec![2., 1., 1., 0.]];
+        let complex = rips(dists, Dimension::from(2), None);
+        assert_eq!(complex.len(), 14);
     }
 }
