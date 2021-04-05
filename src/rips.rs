@@ -126,8 +126,10 @@ fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension, max_distance: Option<f64>)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::binomial::BinomialCoeff;
+    use std::cmp;
     use proptest::prelude::*;
-    use proptest::collection::hash_set;
+    use proptest::collection::vec;
 
     #[test]
     fn test_rips_small() {
@@ -162,5 +164,44 @@ mod tests {
                          vec![2., 1., 1., 0.]];
         let complex = rips(dists, Dimension::from(2), None);
         assert_eq!(complex.len(), 14);
+    }
+
+    proptest! {
+        #[test]
+        fn test_rips_correct_count(distances in vec(0.01f64..1000.0, 0..100), max_dim in 0usize..4) {
+            // invert the formula for arithmetic sum to get n^2 + n - 2s = 0
+            let n = 1 + ((((1 + 8*distances.len()) as f64).sqrt() - 1.0) / 2.0).floor() as usize;
+
+            let mut dists: Vec<Vec<f64>> = (0..n).map(|_| {
+                (0..n).map(|_| 0.0).collect()
+            }).collect();
+
+            let mut diag = 1;
+            let mut offset = 0;
+            for distance in distances {
+                if diag == n {
+                    break;
+                }
+                dists[diag][offset] = distance;
+                dists[offset][diag] = distance;
+                offset += 1;
+                if offset >= diag {
+                    offset = 0;
+                    diag += 1
+                }
+            }
+            println!("Distances: {:?}", dists);
+
+            let binomial = BinomialCoeff::construct_for_max_k_and_n(n+1, max_dim+1);
+
+            // expected number is n choose k, 0 <= k <= max_dim
+            // and stopping if k > n
+            let expected: usize = (0..cmp::min(max_dim+1, n)).map(|k| {
+                binomial.binomial(n, k+1)
+            }).sum();
+
+            let complex = rips(dists, Dimension::from(max_dim), None);
+            prop_assert_eq!(expected, complex.len());
+        }
     }
 }

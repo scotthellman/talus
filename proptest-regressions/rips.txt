@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 7046cb4a51ced687bcaa76055a222ece06ccf308304818dfa66f2ae6dded84d1 # shrinks to distances = [0.01], max_dim = 0
+cc da4ebe6ec8a3d55fbc34190b7a96659570f572d1f4573f220472fdb463ed3b8a # shrinks to distances = [], max_dim = 0
