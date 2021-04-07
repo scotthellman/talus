@@ -3,7 +3,7 @@ use super::binomial::BinomialCoeff;
 
 pub struct SimplexConverter {
     pub binomial: BinomialCoeff,
-    vertex_count: usize
+    pub vertex_count: usize
 }
 
 impl SimplexConverter {

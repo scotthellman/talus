@@ -1,6 +1,7 @@
 use super::simplex::{Simplex, Dimension, CNS, SimplexConverter};
 use std::collections::{HashMap, HashSet};
 use std::cmp::Ordering;
+use super::binomial::BinomialCoeff;
 use itertools::Itertools;
 
 
@@ -30,6 +31,63 @@ impl RichSimplex {
         let simplex = converter.simplex_to_cns(&Simplex::construct_simplex(vertices, lifetime));
         let dimension = Dimension::from(vertices.len() - 1);
         RichSimplex{simplex, dimension, lifetime}
+    }
+
+    fn cofacets<'a>(&self, converter: &'a SimplexConverter) -> CofacetIterator<'a> {
+        let vertices = converter.cns_to_vector(self.simplex, self.dimension);
+        CofacetIterator{
+            dimension: self.dimension,
+            binomial: &converter.binomial,
+            left_sum: 0,
+            right_sum: usize::from(self.simplex) as i64,
+            k: usize::from(self.dimension),
+            j: converter.vertex_count,
+            vertices,
+        }
+    }
+}
+
+struct CofacetIterator<'a> {
+    dimension: Dimension,
+    binomial: &'a BinomialCoeff,
+    vertices: Vec<usize>,
+    left_sum: i64,
+    right_sum: i64,
+    k: usize,
+    j: usize
+}
+
+impl<'a> Iterator for CofacetIterator<'a> {
+    // we will be counting with usize
+    type Item = RichSimplex;
+
+    // next() is the only required method
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let j = self.j;
+            let dim = usize::from(self.dimension);
+            self.j -= 1;
+            while j < self.vertices[dim - self.k] {
+                self.left_sum += self.binomial.binomial(self.vertices[dim - self.k], self.k+2) as i64;
+                self.right_sum -= self.binomial.binomial(self.vertices[dim - self.k], self.k+1) as i64;
+                if self.k == 0{
+                    break;
+                }
+                self.k -= 1;
+            }
+            if !(j == self.vertices[dim - self.k]) {
+                let cns =  self.left_sum + self.right_sum + self.binomial.binomial(j, self.k+2) as i64;
+                let cns = CNS::from(cns as usize);
+                break Some(RichSimplex{
+                    simplex: cns,
+                    dimension: self.dimension,
+                    lifetime: f64::NAN //FIXME this is not a Good way to indicate lifetime isn't set
+                })
+            }
+            if j == 0 {
+                break None;
+            }
+        }
     }
 }
 
@@ -198,6 +256,18 @@ mod tests {
                          vec![2., 1., 1., 0.]];
         let complex = rips(dists, Dimension::from(2), None);
         assert_eq!(complex.len(), 14);
+    }
+
+    #[test]
+    fn test_cofacet_iterator() {
+        let converter = SimplexConverter::construct_for_vertex_count_and_dim(7, 4);
+        let simplex = RichSimplex::from_vertices(&[0, 3, 5], 1., &converter);
+        let n = simplex.cofacets(&converter).next();
+        if let Some(s) = n {
+            println!("{:?}: {:?}", s, converter.cns_to_vector(s.simplex, s.dimension));
+        }
+
+        assert_eq!(0, 14);
     }
 
     proptest! {
