@@ -1,5 +1,6 @@
 use super::simplex::{Simplex, Dimension, CNS, SimplexConverter};
 use std::collections::{HashMap, HashSet};
+use std::cmp::Ordering;
 use itertools::Itertools;
 
 
@@ -7,9 +8,21 @@ use itertools::Itertools;
 
 #[derive(Debug, PartialEq)]
 struct RichSimplex {
-    simplex: CNS,
+    lifetime: f64,
     dimension: Dimension,
-    lifetime: f64
+    simplex: CNS
+}
+
+impl PartialOrd for RichSimplex {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        if self.lifetime == other.lifetime {
+            if self.dimension == other.dimension {
+                return other.simplex.partial_cmp(&self.simplex)
+            }
+            return self.dimension.partial_cmp(&other.dimension)
+        }
+        self.lifetime.partial_cmp(&other.lifetime)
+    }
 }
 
 impl RichSimplex {
@@ -120,6 +133,9 @@ fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension, max_distance: Option<f64>)
         simplices.extend(cofaces);
         println!("{:?} simplices - {:?}", simplices.len(), simplices);
     }
+
+    // Ripser assumes the complex is ordered by lifetime, then dimension, then by CNS
+    simplices.sort_by(|a, b| a.partial_cmp(b).unwrap()); // TODO: plausibly we can handle nan more gracefully
     simplices
 }
 
@@ -137,13 +153,31 @@ mod tests {
                          vec![1., 0., 2., 1.],
                          vec![1., 2., 0., 1.],
                          vec![2., 1., 1., 0.]];
-        // 4 choose 1 = 4
-        // 4 choose 2 = 6
-        // 4 choose 3 = 4
-        // 4 choose 4 = 1
-        // Sums to 15
+        // Expected simplices, in order:
+        // We need rips to be reverse lexicographic for identical lifetime and dim, so we can assume the
+        // full ordering here
+        // NOTE it's reverse reverse lexicographic, as we go backwards through the vertices
+        // 3, 2, 1, 0, 23, 13, 02, 01, 12, 03, 123, 023, 013, 012, 0123
+        let converter = SimplexConverter::construct_for_vertex_count_and_dim(dists.len(), 4);
+        let expected = vec![
+            RichSimplex::from_vertices(&[3], 0., &converter),
+            RichSimplex::from_vertices(&[2], 0., &converter),
+            RichSimplex::from_vertices(&[1], 0., &converter),
+            RichSimplex::from_vertices(&[0], 0., &converter),
+            RichSimplex::from_vertices(&[2, 3], 1., &converter),
+            RichSimplex::from_vertices(&[1, 3], 1., &converter),
+            RichSimplex::from_vertices(&[0, 2], 1., &converter),
+            RichSimplex::from_vertices(&[0, 1], 1., &converter),
+            RichSimplex::from_vertices(&[0, 3], 2., &converter),
+            RichSimplex::from_vertices(&[1, 2], 2., &converter),
+            RichSimplex::from_vertices(&[1, 2, 3], 2., &converter),
+            RichSimplex::from_vertices(&[0, 2, 3], 2., &converter),
+            RichSimplex::from_vertices(&[0, 1, 3], 2., &converter),
+            RichSimplex::from_vertices(&[0, 1, 2], 2., &converter),
+            RichSimplex::from_vertices(&[0, 1, 2, 3], 2., &converter),
+        ];
         let complex = rips(dists, Dimension::from(4), None);
-        assert_eq!(complex.len(), 15);
+        assert_eq!(expected, complex);
     }
 
     #[test]
@@ -168,7 +202,7 @@ mod tests {
 
     proptest! {
         #[test]
-        fn test_rips_correct_count(distances in vec(0.01f64..1000.0, 0..100), max_dim in 0usize..4) {
+        fn test_rips_correct_counts(distances in vec(0.01f64..1000.0, 0..100), max_dim in 0usize..4) {
             // invert the formula for arithmetic sum to get n^2 + n - 2s = 0
             let n = 1 + ((((1 + 8*distances.len()) as f64).sqrt() - 1.0) / 2.0).floor() as usize;
 
@@ -193,15 +227,17 @@ mod tests {
             println!("Distances: {:?}", dists);
 
             let binomial = BinomialCoeff::construct_for_max_k_and_n(n+1, max_dim+1);
+            let complex = rips(dists, Dimension::from(max_dim), None);
 
             // expected number is n choose k, 0 <= k <= max_dim
             // and stopping if k > n
-            let expected: usize = (0..cmp::min(max_dim+1, n)).map(|k| {
-                binomial.binomial(n, k+1)
-            }).sum();
-
-            let complex = rips(dists, Dimension::from(max_dim), None);
-            prop_assert_eq!(expected, complex.len());
+            for k in 0..cmp::min(max_dim+1, n){
+                let simplex_count = complex.iter()
+                    .filter(|s| s.dimension == Dimension::from(k))
+                    .count();
+                let expected = binomial.binomial(n, k+1);
+                prop_assert_eq!(expected, simplex_count);
+            }
         }
     }
 }

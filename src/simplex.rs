@@ -70,7 +70,7 @@ impl SimplexConverter {
 
 
 
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CNS(usize);
 impl From<usize> for CNS {
     fn from(val: usize) -> CNS {
@@ -84,7 +84,7 @@ impl From<CNS> for usize {
    }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Dimension(usize);
 impl From<usize> for Dimension {
     fn from(val: usize) -> Dimension {
