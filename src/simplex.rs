@@ -8,7 +8,7 @@ pub struct SimplexConverter {
 
 impl SimplexConverter {
     pub fn construct_for_vertex_count_and_dim(vertex_count: usize, dim: usize) -> Self {
-        let binomial = BinomialCoeff::construct_for_max_k_and_n(vertex_count+1, dim+1);
+        let binomial = BinomialCoeff::construct_for_max_k_and_n(vertex_count+10, dim+5);
         SimplexConverter{binomial, vertex_count}
     }
 
