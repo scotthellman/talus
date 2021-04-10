@@ -22,6 +22,7 @@ pub mod simplex;
 pub mod python;
 pub mod binomial;
 pub mod rips;
+pub mod homology;
 
 
 pub trait Metric {

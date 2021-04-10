@@ -6,12 +6,13 @@ use itertools::Itertools;
 
 
 // FIXME: notation issue, i say lifetime when birthtime is more accurate
+// ripser paper uses "diameter" but i think that's confusing without context
 
 #[derive(Debug, PartialEq)]
-struct RichSimplex {
-    lifetime: f64,
-    dimension: Dimension,
-    simplex: CNS
+pub struct RichSimplex {
+    pub lifetime: f64,
+    pub dimension: Dimension,
+    pub simplex: CNS
 }
 
 impl PartialOrd for RichSimplex {
@@ -27,13 +28,13 @@ impl PartialOrd for RichSimplex {
 }
 
 impl RichSimplex {
-    fn from_vertices(vertices: &[usize], lifetime: f64, converter: &SimplexConverter) -> RichSimplex {
+    pub fn from_vertices(vertices: &[usize], lifetime: f64, converter: &SimplexConverter) -> RichSimplex {
         let simplex = converter.simplex_to_cns(&Simplex::construct_simplex(vertices, lifetime));
         let dimension = Dimension::from(vertices.len() - 1);
         RichSimplex{simplex, dimension, lifetime}
     }
 
-    fn cofacets<'a>(&self, converter: &'a SimplexConverter) -> CofacetIterator<'a> {
+    pub fn cofacets<'a>(&self, converter: &'a SimplexConverter) -> CofacetIterator<'a> {
         let vertices = converter.cns_to_vector(self.simplex, self.dimension);
         CofacetIterator{
             dimension: self.dimension,
@@ -47,7 +48,7 @@ impl RichSimplex {
     }
 }
 
-struct CofacetIterator<'a> {
+pub struct CofacetIterator<'a> {
     dimension: Dimension,
     binomial: &'a BinomialCoeff,
     vertices: Vec<usize>,
@@ -288,7 +289,6 @@ mod tests {
                     diag += 1
                 }
             }
-            println!("Distances: {:?}", dists);
 
             let binomial = BinomialCoeff::construct_for_max_k_and_n(n+1, max_dim+1);
             let complex = rips(dists, Dimension::from(max_dim), None);
