@@ -139,6 +139,54 @@ fn find_pivot(face: &RichSimplex, cofaces: &[RichSimplex], coface_indices: &Hash
         }).into_inner()
 }
 
+/*
+ * function find_pairs_with_clearing(face_simplices::Vector{Simplex}, coface_simplices::Vector{Simplex},
+                                  face_pairs::Vector{Tuple{Int, Int}}, face_columns::Dict{Int, Vector{Int}},
+                                  total_points::Int)
+    # This is Algorithm 2
+    # i know i'm doing coboundaries but the pairs are of the form (face, coface) still
+    # of course in this case thats (subface, face)
+    pivots = Set(j for (i,j) in face_pairs)
+    original_index_lookup = Int[]
+    filtered_face_simplices = Simplex[]
+    for (i,s) in enumerate(face_simplices)
+        if s in pivots
+            continue
+        end
+        push!(original_index_lookup, i)
+        push!(filtered_face_simplices, s)
+    end
+
+    face_V, coface_pairs, face_essentials = find_persistent_pairs(filtered_face_simplices, coface_simplices,
+        total_points)
+
+    # Lines 4-5 in Alg 2 are about fixing our indexing
+    fixed_V = zeros(Int, length(face_simplices), length(face_simplices))
+    fixed_V[original_index_lookup, original_index_lookup] = face_V
+    fixed_pairs = [(original_index_lookup[f], c) for (f,c) in coface_pairs]
+    fixed_essentials = [original_index_lookup[f] for f in face_essentials]
+
+    for (s, f) in face_pairs
+        fixed_V[:, f] = face_columns[s]
+    end
+    fixed_V, fixed_pairs, fixed_essentials
+*/
+
+fn find_pairs_with_clearing(faces: &[RichSimplex], cofaces: &[RichSimplex], face_pairs: &[(usize, usize)],
+                            face_columns: &HashMap<usize, Vec<usize>>, converter: &SimplexConverter) -> PivotResult {
+    let pivots: HashSet<usize> = face_pairs.iter().map(|(f, c)| *c).collect();
+    let mut index_lookup: Vec<usize> = Vec::with_capacity(faces.len() - pivots.len());
+    // TODO: Maybe don't need to copy here?
+    let mut filtered_faces: Vec<RichSimplex> = Vec::with_capacity(faces.len() - pivots.len());
+    for (i, s) in faces.iter().enumerate() {
+        if pivots.contains(s) {
+            continue;
+        }
+        index_lookup.push(i);
+        filtered_faces.push(s);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
