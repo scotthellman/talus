@@ -8,7 +8,7 @@ use itertools::Itertools;
 // FIXME: notation issue, i say lifetime when birthtime is more accurate
 // ripser paper uses "diameter" but i think that's confusing without context
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct RichSimplex {
     pub lifetime: f64,
     pub dimension: Dimension,

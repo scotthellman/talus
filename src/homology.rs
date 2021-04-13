@@ -47,6 +47,18 @@ impl TransformationMatrix {
         let new_col: HashSet<usize> = this_col.symmetric_difference(other_col).copied().collect();
         self.columns.insert(other, new_col);
     }
+
+    fn remap_rows(&mut self, index_list: &[usize]) {
+        let new_columns: HashMap<usize, HashSet<usize>> = self.columns.iter()
+            .map(|(&i, col)| {
+                let new_col: HashSet<usize> = col.iter()
+                    .map(|&row| index_list[row])
+                    .collect();
+                (i, new_col)
+            })
+            .collect();
+        self.columns = new_columns;
+    }
 }
 
 struct InterimPersistenceResult {
@@ -98,10 +110,13 @@ fn apply_transformation(cofaces: &mut HashSet<usize>, face_simplices: &[RichSimp
     for i in 0..pivot_owner { // Could instead check all values in transformation, esp if they were ordered somehow
         if current_transformation.contains(&i) {
             for coface in face_simplices[i].cofacets(converter) {
-                let coface_index = coface_indices[&coface.simplex];
-                if !cofaces.remove(&coface_index) {
-                    cofaces.insert(coface_index);
-                }
+                match coface_indices.get(&coface.simplex){
+                    None => continue,
+                    Some(coface_index) => {
+                        if !cofaces.remove(coface_index) {
+                            cofaces.insert(*coface_index);
+                        }
+                    }
             }
         }
     }
@@ -139,52 +154,104 @@ fn find_pivot(face: &RichSimplex, cofaces: &[RichSimplex], coface_indices: &Hash
         }).into_inner()
 }
 
-/*
- * function find_pairs_with_clearing(face_simplices::Vector{Simplex}, coface_simplices::Vector{Simplex},
-                                  face_pairs::Vector{Tuple{Int, Int}}, face_columns::Dict{Int, Vector{Int}},
-                                  total_points::Int)
-    # This is Algorithm 2
-    # i know i'm doing coboundaries but the pairs are of the form (face, coface) still
-    # of course in this case thats (subface, face)
-    pivots = Set(j for (i,j) in face_pairs)
-    original_index_lookup = Int[]
-    filtered_face_simplices = Simplex[]
-    for (i,s) in enumerate(face_simplices)
-        if s in pivots
-            continue
-        end
-        push!(original_index_lookup, i)
-        push!(filtered_face_simplices, s)
-    end
-
-    face_V, coface_pairs, face_essentials = find_persistent_pairs(filtered_face_simplices, coface_simplices,
-        total_points)
-
-    # Lines 4-5 in Alg 2 are about fixing our indexing
-    fixed_V = zeros(Int, length(face_simplices), length(face_simplices))
-    fixed_V[original_index_lookup, original_index_lookup] = face_V
-    fixed_pairs = [(original_index_lookup[f], c) for (f,c) in coface_pairs]
-    fixed_essentials = [original_index_lookup[f] for f in face_essentials]
-
-    for (s, f) in face_pairs
-        fixed_V[:, f] = face_columns[s]
-    end
-    fixed_V, fixed_pairs, fixed_essentials
-*/
-
 fn find_pairs_with_clearing(faces: &[RichSimplex], cofaces: &[RichSimplex], face_pairs: &[(usize, usize)],
-                            face_columns: &HashMap<usize, Vec<usize>>, converter: &SimplexConverter) -> PivotResult {
+                            face_columns: &HashMap<usize, Vec<usize>>, converter: &SimplexConverter) -> InterimPersistenceResult {
     let pivots: HashSet<usize> = face_pairs.iter().map(|(f, c)| *c).collect();
     let mut index_lookup: Vec<usize> = Vec::with_capacity(faces.len() - pivots.len());
     // TODO: Maybe don't need to copy here?
     let mut filtered_faces: Vec<RichSimplex> = Vec::with_capacity(faces.len() - pivots.len());
     for (i, s) in faces.iter().enumerate() {
-        if pivots.contains(s) {
+        // NOTE/TODO:deviating from the julia code here, but i think the julia code was wrong?
+        if pivots.contains(&i) {
             continue;
         }
         index_lookup.push(i);
-        filtered_faces.push(s);
+        filtered_faces.push(s.clone());
     }
+
+    let mut result = find_persistent_pairs(&filtered_faces, cofaces, converter);
+
+    // Now we need to fix our indexing to correspond to the full faces
+    result.transformation.remap_rows(&index_lookup);
+    result.pairs.iter_mut().for_each(|pair| pair.0 = index_lookup[pair.0]);
+    for i in 0..result.essentials.len() {
+        result.essentials[i] = index_lookup[result.essentials[i]];
+    }
+
+    // TODO: i don't remember why we do this
+    for (f, c) in face_pairs {
+        result.transformation.columns.insert(*c, face_columns[f].iter().copied().collect());
+    }
+
+    result
+}
+
+fn compute_barcodes(complex: &[RichSimplex], converter: &SimplexConverter) -> Vec<Vec<(usize, usize)>> {
+    let max_dimension = complex.iter().map(|s| usize::from(s.dimension)).max().unwrap();
+    let mut dimension_pairs: Vec<Vec<(usize, usize)>> = Vec::with_capacity(max_dimension);
+    let mut dimension_essentials: Vec<Vec<usize>> = Vec::with_capacity(max_dimension);
+    let mut dimension_partitions: Vec<Vec<RichSimplex>> = (0..max_dimension).map(|_| {
+            //FIXME: this capacity is pretty off
+            Vec::with_capacity(complex.len() / max_dimension)
+        }).collect();
+
+    // iterate in reverse because ripser uses cohomology, so we need to go backwards
+    // (but all the other machinery is built for homology, so to go backwards we need to flip
+    // everything around)
+    for s in complex.iter().rev() {
+        dimension_partitions[usize::from(s.dimension)].push(s.clone());
+    }
+
+
+    // H0 has to be calculated normally 
+    // TODO: it can be done faster than the general homology algorithm
+
+    let InterimPersistenceResult {transformation, pairs, essentials} = find_persistent_pairs(&dimension_partitions[0], &dimension_partitions[1], converter);
+    dimension_pairs.push(pairs);
+    dimension_essentials.push(essentials);
+
+    for d in 2..max_dimension {
+        let subfaces = dimension_partitions[i-2];
+        let faces = dimension_partitions[i-1];
+        let cofaces = dimension_partitions[i];
+
+        let available_faces: HashSet<CNS> = faces.iter().map(|f| f.simplex).collect();
+        let face_columns: HashMap<usize, Vec<usize>> = HashMap::with_capacity(10); //FIXME again, more capacity things
+        for (s, f) in pairs {
+            // TODO: Split this into a function?
+            let selected = transformation.columns.get(&s).unwrap(); // FIXME why s instead of f?
+            let mut reduced: HashSet<CNS> = HashSet::with_capacity(10); // FIXME: I can definitely know this better a priori
+
+            // TODO: This was the moment that I realized the columns might need to be ordered
+            for (i, selection) in selected.iter().filter(|&&row| row < s).enumerate() {
+                // NOTE: dropping a conditional in julia that i think was never satisfied
+                for face_cns in subfaces[i].cofacets(converter) {
+                    if !available_faces.contains(face_cns) {
+                        continue
+                    }
+                    if !reduced.remove(face_cns) {
+                        reduced.insert(*face_cns);
+                    }
+                }
+            }
+            //            face_columns[s] = [f in reduced ? 1 : 0 for f in faces] 
+            let filtered_column: Vec<usize> = faces.iter().enumerate()
+                .filter_map(|i, f| {
+                    if reduced.contains(f) {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            face_columns.insert(s, filtered_column);
+        }
+        let InterimPersistenceResult {transformation, pairs, essentials} = find_pairs_with_clearing(&faces, &cofaces, &pairs, &face_columns, converter);
+        dimension_pairs.push(pairs);
+        dimension_essentials.push(essentials);
+    }
+
+    // TODO: convert to lifetimes
 }
 
 #[cfg(test)]
