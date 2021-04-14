@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use petgraph::graph::{UnGraph, NodeIndex};
 use super::{graph, morse, LabeledPoint};
 use pyo3::prelude::*;
-use pyo3::exceptions::OSError;
+use pyo3::exceptions::PyOSError;
 
 
 #[pyclass]
@@ -52,13 +52,13 @@ pub struct MorseFiltrationStepPy {
 
 impl std::convert::From<morse::MorseError> for PyErr {
     fn from(err: morse::MorseError) -> PyErr {
-        OSError::py_err(err.to_string())
+        PyOSError::new_err(err.to_string())
     }
 }
 
 impl std::convert::From<graph::GraphError> for PyErr {
     fn from(err: graph::GraphError) -> PyErr {
-        OSError::py_err(err.to_string())
+        PyOSError::new_err(err.to_string())
     }
 }
 
