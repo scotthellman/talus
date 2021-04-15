@@ -100,12 +100,17 @@ struct PivotResult {
 
 fn find_pivot(face: &RichSimplex, cofaces: &[RichSimplex], coface_indices: &HashMap<CNS, usize>,
               pivots: &HashMap<usize, usize>, converter: &SimplexConverter) -> PivotResult {
+    println!("coface indices: {:?}", coface_indices);
 
     face.cofacets(converter)
-        .filter(|c| !coface_indices.contains_key(&c.simplex))
+        .inspect(|c| println!("Finding pivots for {:?}, ({:?})", c, coface_indices.contains_key(&c.simplex)))
+        .filter(|c| coface_indices.contains_key(&c.simplex))
         .fold_while(PivotResult{pivot_index: None, maximal: false, coface_indices: HashSet::new()}, |mut acc, c| {
+            println!("c simplex {:?}", c.simplex);
             let coface_index = *coface_indices.get(&c.simplex).unwrap();
+            println!("coface index {:?}", coface_index);
             acc.coface_indices.insert(coface_index);
+            println!("so inside the indices are {:?}", acc.coface_indices);
             if acc.maximal {
                 return Continue(acc)
             } else {
@@ -130,12 +135,15 @@ fn find_persistent_pairs(faces: &[RichSimplex], cofaces: &[RichSimplex],
     let mut pairs: Vec<(usize, usize)> = Vec::with_capacity(cofaces.len());
     let mut transformation: TransformationMatrix = TransformationMatrix::new(cofaces.len());
     for (i, face) in faces.iter().enumerate() {
+        println!("Looking at {:?}", face);
+        println!("Pairs are {:?}", pairs);
         let mut pivot_result = find_pivot(face, cofaces, &coface_indices, &pivots, converter);
         if let Some(pivot) = pivot_result.pivot_index {
             pairs.push((i, pivot));
             pivots.insert(pivot, i);
             continue;
         }
+        println!("{:?}", pivot_result.coface_indices);
         let mut pivot = pivot_result.coface_indices.iter().max().unwrap(); // FIXME: should probably be a heap or something
         while pivot_result.coface_indices.len() > 0 {
             match pivots.get(pivot) {
@@ -190,10 +198,10 @@ fn find_pairs_with_clearing(faces: &[RichSimplex], cofaces: &[RichSimplex], face
 
 fn compute_barcodes(complex: &[RichSimplex], converter: &SimplexConverter) -> Vec<Vec<(f64, f64)>> {
     let max_dimension = complex.iter().map(|s| usize::from(s.dimension)).max().unwrap();
-    let mut lifetimes: Vec<Vec<(f64, f64)>> = Vec::with_capacity(max_dimension);
-    let mut dimension_pairs: Vec<Vec<(usize, usize)>> = Vec::with_capacity(max_dimension);
-    let mut dimension_essentials: Vec<Vec<usize>> = Vec::with_capacity(max_dimension);
-    let mut dimension_partitions: Vec<Vec<RichSimplex>> = (0..max_dimension).map(|_| {
+    let mut lifetimes: Vec<Vec<(f64, f64)>> = Vec::with_capacity(max_dimension+1);
+    let mut dimension_pairs: Vec<Vec<(usize, usize)>> = Vec::with_capacity(max_dimension+1);
+    let mut dimension_essentials: Vec<Vec<usize>> = Vec::with_capacity(max_dimension+1);
+    let mut dimension_partitions: Vec<Vec<RichSimplex>> = (0..max_dimension+1).map(|_| {
             //FIXME: this capacity is pretty off
             Vec::with_capacity(complex.len() / max_dimension)
         }).collect();
@@ -299,5 +307,24 @@ mod tests {
             assert!(expected.is_subset(actual));
             assert!(expected.is_superset(actual));
         }
+    }
+
+    #[test]
+    fn test_ripser() {
+        let converter = SimplexConverter::construct_for_vertex_count_and_dim(3, 3);
+
+        let complex = [
+            RichSimplex::from_vertices(&[0, 1, 2], 2., &converter),
+            RichSimplex::from_vertices(&[0, 2], 2., &converter),
+            RichSimplex::from_vertices(&[1, 2], 1.5, &converter),
+            RichSimplex::from_vertices(&[0, 1], 1., &converter),
+            RichSimplex::from_vertices(&[0], 0., &converter),
+            RichSimplex::from_vertices(&[1], 0., &converter),
+            RichSimplex::from_vertices(&[2], 0., &converter),
+        ];
+
+        let result = compute_barcodes(&complex, &converter);
+        println!("{:?}", result);
+        assert!(false);
     }
 }

@@ -27,6 +27,7 @@ impl PartialOrd for RichSimplex {
     }
 }
 
+// FIXME: this doesn't belong in rips
 impl RichSimplex {
     pub fn from_vertices(vertices: &[usize], lifetime: f64, converter: &SimplexConverter) -> RichSimplex {
         let simplex = converter.simplex_to_cns(&Simplex::construct_simplex(vertices, lifetime));
