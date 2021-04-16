@@ -91,21 +91,22 @@ fn apply_transformation(cofaces: &mut HashSet<usize>, face_simplices: &[RichSimp
     transformation.add_first_to_second(pivot_owner, target_column);
 }
 
-struct PivotResult {
+#[derive(Debug)]
+struct CofaceInfo {
     pivot_index: Option<usize>,
     maximal: bool,
     coface_indices: HashSet<usize>
 }
 
 
-fn find_pivot(face: &RichSimplex, cofaces: &[RichSimplex], coface_indices: &HashMap<CNS, usize>,
-              pivots: &HashMap<usize, usize>, converter: &SimplexConverter) -> PivotResult {
+fn get_coface_information(face: &RichSimplex, cofaces: &[RichSimplex], coface_indices: &HashMap<CNS, usize>,
+              pivots: &HashMap<usize, usize>, converter: &SimplexConverter) -> CofaceInfo {
     println!("coface indices: {:?}", coface_indices);
 
     face.cofacets(converter)
         .inspect(|c| println!("Finding pivots for {:?}, ({:?})", c, coface_indices.contains_key(&c.simplex)))
         .filter(|c| coface_indices.contains_key(&c.simplex))
-        .fold_while(PivotResult{pivot_index: None, maximal: false, coface_indices: HashSet::new()}, |mut acc, c| {
+        .fold_while(CofaceInfo{pivot_index: None, maximal: false, coface_indices: HashSet::new()}, |mut acc, c| {
             println!("c simplex {:?}", c.simplex);
             let coface_index = *coface_indices.get(&c.simplex).unwrap();
             println!("coface index {:?}", coface_index);
@@ -137,7 +138,7 @@ fn find_persistent_pairs(faces: &[RichSimplex], cofaces: &[RichSimplex],
     for (i, face) in faces.iter().enumerate() {
         println!("Looking at {:?}", face);
         println!("Pairs are {:?}", pairs);
-        let mut pivot_result = find_pivot(face, cofaces, &coface_indices, &pivots, converter);
+        let mut pivot_result = get_coface_information(face, cofaces, &coface_indices, &pivots, converter);
         if let Some(pivot) = pivot_result.pivot_index {
             pairs.push((i, pivot));
             pivots.insert(pivot, i);
@@ -310,6 +311,48 @@ mod tests {
     }
 
     #[test]
+    fn test_get_coface_information() {
+        let converter = SimplexConverter::construct_for_vertex_count_and_dim(3, 3);
+        let face = RichSimplex::from_vertices(&[0], 0., &converter);
+        let cofaces = [
+            RichSimplex::from_vertices(&[0, 2], 2., &converter),
+            RichSimplex::from_vertices(&[1, 2], 1.5, &converter),
+            RichSimplex::from_vertices(&[0, 1], 0., &converter),
+        ];
+        let coface_indices:HashMap<CNS, usize> = cofaces.iter().enumerate()
+            .map(|(i,s)| (s.simplex, i))
+            .collect();
+        let pivots: HashMap<usize, usize> = HashMap::new();
+
+        let result = get_coface_information(&face, &cofaces, &coface_indices, &pivots, &converter);
+        println!("{:?}", result);
+        assert_eq!(result.pivot_index, Some(2));
+        assert!(result.maximal);
+        assert_eq!(result.coface_indices, [0, 2].iter().copied().collect());
+    }
+
+
+    #[test]
+    fn test_find_persistent_pairs() {
+        let converter = SimplexConverter::construct_for_vertex_count_and_dim(3, 3);
+        let faces = [
+            RichSimplex::from_vertices(&[0], 0., &converter),
+            RichSimplex::from_vertices(&[1], 0., &converter),
+            RichSimplex::from_vertices(&[2], 0., &converter),
+        ];
+        let cofaces = [
+            RichSimplex::from_vertices(&[0, 2], 2., &converter),
+            RichSimplex::from_vertices(&[1, 2], 1.5, &converter),
+            RichSimplex::from_vertices(&[0, 1], 1., &converter),
+        ];
+
+        let result = find_persistent_pairs(&faces, &cofaces, &converter);
+        println!("{:?}", result.pairs);
+        println!("{:?}", result.essentials);
+        //assert!(false);
+    }
+
+    #[test]
     fn test_ripser() {
         let converter = SimplexConverter::construct_for_vertex_count_and_dim(3, 3);
 
@@ -317,7 +360,7 @@ mod tests {
             RichSimplex::from_vertices(&[0, 1, 2], 2., &converter),
             RichSimplex::from_vertices(&[0, 2], 2., &converter),
             RichSimplex::from_vertices(&[1, 2], 1.5, &converter),
-            RichSimplex::from_vertices(&[0, 1], 1., &converter),
+            RichSimplex::from_vertices(&[0, 1], 0., &converter),
             RichSimplex::from_vertices(&[0], 0., &converter),
             RichSimplex::from_vertices(&[1], 0., &converter),
             RichSimplex::from_vertices(&[2], 0., &converter),
@@ -325,6 +368,6 @@ mod tests {
 
         let result = compute_barcodes(&complex, &converter);
         println!("{:?}", result);
-        assert!(false);
+        //assert!(false);
     }
 }
