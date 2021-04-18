@@ -118,6 +118,7 @@ fn get_coface_information(face: &RichSimplex, cofaces: &[RichSimplex], coface_in
                 if cofaces[coface_index].lifetime == face.lifetime{
                     acc.maximal = true;
                     if !pivots.contains_key(&coface_index) {
+                        println!("early abandon");
                         acc.pivot_index = Some(coface_index);
                         return Done(acc)
                     }
@@ -329,6 +330,13 @@ mod tests {
         assert_eq!(result.pivot_index, Some(2));
         assert!(result.maximal);
         assert_eq!(result.coface_indices, [0, 2].iter().copied().collect());
+
+        let face = RichSimplex::from_vertices(&[2], 0., &converter);
+        let result = get_coface_information(&face, &cofaces, &coface_indices, &pivots, &converter);
+        println!("{:?}", result);
+        assert_eq!(result.pivot_index, None);
+        assert!(!result.maximal);
+        assert_eq!(result.coface_indices, [1, 2].iter().copied().collect());
     }
 
 
