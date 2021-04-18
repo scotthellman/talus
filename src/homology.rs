@@ -314,7 +314,6 @@ mod tests {
     #[test]
     fn test_get_coface_information() {
         let converter = SimplexConverter::construct_for_vertex_count_and_dim(3, 3);
-        let face = RichSimplex::from_vertices(&[0], 0., &converter);
         let cofaces = [
             RichSimplex::from_vertices(&[0, 2], 2., &converter),
             RichSimplex::from_vertices(&[1, 2], 1.5, &converter),
@@ -325,18 +324,17 @@ mod tests {
             .collect();
         let pivots: HashMap<usize, usize> = HashMap::new();
 
+        let face = RichSimplex::from_vertices(&[0], 0., &converter);
         let result = get_coface_information(&face, &cofaces, &coface_indices, &pivots, &converter);
-        println!("{:?}", result);
         assert_eq!(result.pivot_index, Some(2));
         assert!(result.maximal);
         assert_eq!(result.coface_indices, [0, 2].iter().copied().collect());
 
         let face = RichSimplex::from_vertices(&[2], 0., &converter);
         let result = get_coface_information(&face, &cofaces, &coface_indices, &pivots, &converter);
-        println!("{:?}", result);
         assert_eq!(result.pivot_index, None);
         assert!(!result.maximal);
-        assert_eq!(result.coface_indices, [1, 2].iter().copied().collect());
+        assert_eq!(result.coface_indices, [0, 1].iter().copied().collect());
     }
 
 
@@ -355,9 +353,6 @@ mod tests {
         ];
 
         let result = find_persistent_pairs(&faces, &cofaces, &converter);
-        println!("{:?}", result.pairs);
-        println!("{:?}", result.essentials);
-        //assert!(false);
     }
 
     #[test]
@@ -375,7 +370,5 @@ mod tests {
         ];
 
         let result = compute_barcodes(&complex, &converter);
-        println!("{:?}", result);
-        //assert!(false);
     }
 }

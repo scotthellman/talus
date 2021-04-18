@@ -37,16 +37,16 @@ impl RichSimplex {
 
     pub fn cofacets<'a>(&self, converter: &'a SimplexConverter) -> CofacetIterator<'a> {
         let vertices = converter.cns_to_vector(self.simplex, self.dimension);
-        println!("We think the vertex count is {:}", converter.vertex_count);
         CofacetIterator{
             dimension: self.dimension,
             binomial: &converter.binomial,
-            left_sum: 0,
-            right_sum: usize::from(self.simplex) as i64,
+            higher_sum: 0,
+            lower_sum: usize::from(self.simplex) as i64,
             k: usize::from(self.dimension),
             j: converter.vertex_count - 1,
             vertices,
-            negative_k: false
+            negative_k: false,
+            negative_j: false
         }
     }
 }
@@ -55,35 +55,35 @@ pub struct CofacetIterator<'a> {
     dimension: Dimension,
     binomial: &'a BinomialCoeff,
     vertices: Vec<usize>,
-    left_sum: i64,
-    right_sum: i64,
+    higher_sum: i64,
+    lower_sum: i64,
     k: usize,
     j: usize,
-    negative_k: bool
+    negative_k: bool,
+    negative_j: bool
 }
 
 impl<'a> Iterator for CofacetIterator<'a> {
-    // we will be counting with usize
     type Item = RichSimplex;
 
-    // next() is the only required method
     fn next(&mut self) -> Option<Self::Item> {
+        if self.negative_j{
+            return None;
+        }
         let dim = usize::from(self.dimension);
         let result = loop {
-            println!("Looking for next coface, {:} {:}", self.j, self.k);
             while !self.negative_k && self.j < self.vertices[self.k] {
-                self.left_sum += self.binomial.binomial(self.vertices[self.k], self.k+2) as i64;
-                self.right_sum -= self.binomial.binomial(self.vertices[self.k], self.k) as i64;
+                self.higher_sum += self.binomial.binomial(self.vertices[self.k], self.k+2) as i64;
+                self.lower_sum -= self.binomial.binomial(self.vertices[self.k], self.k+1) as i64;
                 if self.k == 0{
                     self.negative_k = true;
                     break;
                 }
                 self.k -= 1;
             }
-            println!("Ok right now it's {:}, cf {:?}", self.j+1, self.vertices[self.k]);
             let k_offset = if self.negative_k {0} else {1};
-            if !self.negative_k && !(self.j == self.vertices[self.k]) {
-                let cns =  self.left_sum + self.right_sum + self.binomial.binomial(self.j, self.k+1+k_offset) as i64;
+            if self.negative_k || !(self.j == self.vertices[self.k]) {
+                let cns =  self.higher_sum + self.lower_sum + self.binomial.binomial(self.j, self.k+1+k_offset) as i64;
                 let cns = CNS::from(cns as usize);
                 break Some(RichSimplex{
                     simplex: cns,
@@ -97,7 +97,11 @@ impl<'a> Iterator for CofacetIterator<'a> {
             self.j -= 1;
         };
         if result.is_some() {
-            self.j -= 1
+            if self.j > 0 {
+                self.j -= 1
+            } else {
+                self.negative_j = true;
+            }
         };
         result
     }
@@ -281,10 +285,13 @@ mod tests {
     fn test_cofacet_iterator_ends_on_0() {
         let converter = SimplexConverter::construct_for_vertex_count_and_dim(3, 3);
         let simplex = RichSimplex::from_vertices(&[2], 1., &converter);
-        let expected = [1, 0];
+        let expected = [2, 1];
+        let mut length = 0;
         for (i, coface) in simplex.cofacets(&converter).enumerate() {
             assert_eq!(CNS::from(expected[i]), coface.simplex);
+            length += 1;
         }
+        assert_eq!(expected.len(), length);
     }
 
     proptest! {
