@@ -12,55 +12,58 @@ struct HomologyData {
 }
 
 
+#[derive(Debug)]
 struct TransformationMatrix {
-    columns: HashMap<usize, HashSet<usize>>
+    // NOTE: ripser does cohomology, that's why these aren't columns
+    rows: HashMap<usize, HashSet<usize>>
 }
 
 impl TransformationMatrix {
-    fn new(num_columns: usize) -> Self {
-        let columns = HashMap::with_capacity(num_columns);
-        TransformationMatrix{columns}
+    fn new(num_rows: usize) -> Self {
+        let rows = HashMap::with_capacity(num_rows);
+        TransformationMatrix{rows}
     }
 
-    fn get_column(&mut self, col: usize) -> &HashSet<usize> {
-        self.ensure_column_exists(col);
-        self.columns.get(&col).unwrap()
+    fn get_row(&mut self, row: usize) -> &HashSet<usize> {
+        self.ensure_row_exists(row);
+        self.rows.get(&row).unwrap()
     }
 
-    fn ensure_column_exists(&mut self, col: usize) {
-        if !self.columns.contains_key(&col){
-            let mut new_col = HashSet::with_capacity(5); // FIXME better capacity
-            new_col.insert(col);
-            self.columns.insert(col, new_col);
+    fn ensure_row_exists(&mut self, row: usize) {
+        if !self.rows.contains_key(&row){
+            let mut new_row = HashSet::with_capacity(5); // FIXME better capacity
+            new_row.insert(row);
+            self.rows.insert(row, new_row);
         }
     }
 
-    fn add_first_to_second(&mut self, col: usize, other: usize) {
+    fn add_first_to_second(&mut self, row: usize, other: usize) {
         // TODO: check on how fast this is vs mutating
-        self.ensure_column_exists(col);
-        self.ensure_column_exists(other);
+        self.ensure_row_exists(row);
+        self.ensure_row_exists(other);
 
-        let this_col = self.columns.get(&col).unwrap();
-        let other_col = self.columns.get(&other).unwrap();
+        let this_row = self.rows.get(&row).unwrap();
+        let other_row = self.rows.get(&other).unwrap();
 
 
-        let new_col: HashSet<usize> = this_col.symmetric_difference(other_col).copied().collect();
-        self.columns.insert(other, new_col);
+        let new_row: HashSet<usize> = this_row.symmetric_difference(other_row).copied().collect();
+        self.rows.insert(other, new_row);
     }
 
     fn remap_rows(&mut self, index_list: &[usize]) {
-        let new_columns: HashMap<usize, HashSet<usize>> = self.columns.iter()
-            .map(|(&i, col)| {
-                let new_col: HashSet<usize> = col.iter()
+        let new_rows: HashMap<usize, HashSet<usize>> = self.rows.iter()
+            .map(|(&i, row)| {
+                let new_row: HashSet<usize> = row.iter()
                     .map(|&row| index_list[row])
                     .collect();
-                (i, new_col)
+                (i, new_row)
             })
             .collect();
-        self.columns = new_columns;
+        self.rows = new_rows;
     }
 }
 
+#[derive(Debug)]
 struct InterimPersistenceResult {
     transformation: TransformationMatrix,
     pairs: Vec<(usize, usize)>,
@@ -71,9 +74,9 @@ struct InterimPersistenceResult {
 
 fn apply_transformation(cofaces: &mut HashSet<usize>, face_simplices: &[RichSimplex],
                         coface_indices: &HashMap<CNS, usize>, converter: &SimplexConverter,
-                        transformation: &mut TransformationMatrix, target_column: usize, pivot_owner: usize) {
-    let current_transformation = transformation.get_column(pivot_owner);
-    for i in 0..pivot_owner { // Could instead check all values in transformation, esp if they were ordered somehow
+                        transformation: &mut TransformationMatrix, target_row: usize, pivot_row: usize) {
+    let current_transformation = transformation.get_row(pivot_row);
+    for i in 0..pivot_row { // Could instead check all values in transformation, esp if they were ordered somehow
         if current_transformation.contains(&i) {
             for coface in face_simplices[i].cofacets(converter) {
                 match coface_indices.get(&coface.simplex){
@@ -87,8 +90,8 @@ fn apply_transformation(cofaces: &mut HashSet<usize>, face_simplices: &[RichSimp
             }
         }
     }
-    // face-th column of transformations needs to have the current transformation added to it
-    transformation.add_first_to_second(pivot_owner, target_column);
+    // face-th row of transformations needs to have the current transformation added to it
+    transformation.add_first_to_second(pivot_row, target_row);
 }
 
 #[derive(Debug)]
@@ -150,9 +153,9 @@ fn find_persistent_pairs(faces: &[RichSimplex], cofaces: &[RichSimplex],
         while pivot_result.coface_indices.len() > 0 {
             match pivots.get(pivot) {
                 None => {break},
-                Some(owner) => {
+                Some(pivot_row) => {
                     apply_transformation(&mut pivot_result.coface_indices, faces, &coface_indices,
-                                         converter, &mut transformation, i, *owner);
+                                         converter, &mut transformation, i, *pivot_row);
                 }
             }
             pivot = pivot_result.coface_indices.iter().max().unwrap(); // FIXME: should probably be a heap or something, also the duplication isn't great
@@ -167,7 +170,7 @@ fn find_persistent_pairs(faces: &[RichSimplex], cofaces: &[RichSimplex],
 }
 
 fn find_pairs_with_clearing(faces: &[RichSimplex], cofaces: &[RichSimplex], face_pairs: &[(usize, usize)],
-                            face_columns: &HashMap<usize, Vec<usize>>, converter: &SimplexConverter) -> InterimPersistenceResult {
+                            face_rows: &HashMap<usize, Vec<usize>>, converter: &SimplexConverter) -> InterimPersistenceResult {
     let pivots: HashSet<usize> = face_pairs.iter().map(|(f, c)| *c).collect();
     let mut index_lookup: Vec<usize> = Vec::with_capacity(faces.len() - pivots.len());
     // TODO: Maybe don't need to copy here?
@@ -192,7 +195,7 @@ fn find_pairs_with_clearing(faces: &[RichSimplex], cofaces: &[RichSimplex], face
 
     // TODO: i don't remember why we do this
     for (f, c) in face_pairs {
-        result.transformation.columns.insert(*c, face_columns[f].iter().copied().collect());
+        result.transformation.rows.insert(*c, face_rows[f].iter().copied().collect());
     }
 
     result
@@ -231,13 +234,13 @@ fn compute_barcodes(complex: &[RichSimplex], converter: &SimplexConverter) -> Ve
         let pairs = &dimension_pairs[d-2];
 
         let available_faces: HashSet<CNS> = faces.iter().map(|f| f.simplex).collect();
-        let mut face_columns: HashMap<usize, Vec<usize>> = HashMap::with_capacity(10); //FIXME again, more capacity things
+        let mut face_rows: HashMap<usize, Vec<usize>> = HashMap::with_capacity(10); //FIXME again, more capacity things
         for (s, _f) in pairs.iter() {
             // TODO: Split this into a function?
-            let selected = current_transformation.columns.get(&s).unwrap(); // FIXME why s instead of f?
+            let selected = current_transformation.rows.get(&s).unwrap(); // FIXME why s instead of f?
             let mut reduced: HashSet<CNS> = HashSet::with_capacity(10); // FIXME: I can definitely know this better a priori
 
-            // TODO: This was the moment that I realized the columns might need to be ordered
+            // TODO: This was the moment that I realized the rows might need to be ordered
             for row_idx in selected.iter().filter(|&&row| row < *s) {
                 // NOTE: dropping a conditional in julia that i think was never satisfied
                 for face_simplex in subfaces[*row_idx].cofacets(converter) {
@@ -249,7 +252,7 @@ fn compute_barcodes(complex: &[RichSimplex], converter: &SimplexConverter) -> Ve
                     }
                 }
             }
-            let filtered_column: Vec<usize> = faces.iter().enumerate()
+            let filtered_row: Vec<usize> = faces.iter().enumerate()
                 .filter_map(|(i, f)| {
                     if reduced.contains(&f.simplex) {
                         Some(i)
@@ -258,9 +261,9 @@ fn compute_barcodes(complex: &[RichSimplex], converter: &SimplexConverter) -> Ve
                     }
                 })
                 .collect();
-            face_columns.insert(*s, filtered_column);
+            face_rows.insert(*s, filtered_row);
         }
-        let InterimPersistenceResult {transformation, pairs, essentials} = find_pairs_with_clearing(&faces, &cofaces, &pairs, &face_columns, converter);
+        let InterimPersistenceResult {transformation, pairs, essentials} = find_pairs_with_clearing(&faces, &cofaces, &pairs, &face_rows, converter);
         current_transformation = transformation;
         lifetimes.push(pairs.iter().map(|(b, d)| (faces[*b].lifetime, cofaces[*d].lifetime)).collect());
         dimension_pairs.push(pairs);
@@ -284,7 +287,7 @@ mod tests {
         // verify we start at I
         for i in 0..3 {
             let expected: HashSet<usize> = [i].iter().copied().collect();
-            let actual = t.get_column(i);
+            let actual = t.get_row(i);
             assert!(expected.is_subset(actual));
             assert!(expected.is_superset(actual));
         }
@@ -296,7 +299,7 @@ mod tests {
             if i == 2 {
                 expected.insert(1);
             }
-            let actual = t.get_column(i);
+            let actual = t.get_row(i);
             assert!(expected.is_subset(actual));
             assert!(expected.is_superset(actual));
         }
@@ -305,7 +308,7 @@ mod tests {
         t.add_first_to_second(1,2);
         for i in 0..3 {
             let expected: HashSet<usize> = [i].iter().copied().collect();
-            let actual = t.get_column(i);
+            let actual = t.get_row(i);
             assert!(expected.is_subset(actual));
             assert!(expected.is_superset(actual));
         }
@@ -342,9 +345,9 @@ mod tests {
     fn test_find_persistent_pairs() {
         let converter = SimplexConverter::construct_for_vertex_count_and_dim(3, 3);
         let faces = [
-            RichSimplex::from_vertices(&[0], 0., &converter),
-            RichSimplex::from_vertices(&[1], 0., &converter),
             RichSimplex::from_vertices(&[2], 0., &converter),
+            RichSimplex::from_vertices(&[1], 0., &converter),
+            RichSimplex::from_vertices(&[0], 0., &converter),
         ];
         let cofaces = [
             RichSimplex::from_vertices(&[0, 2], 2., &converter),
@@ -353,6 +356,8 @@ mod tests {
         ];
 
         let result = find_persistent_pairs(&faces, &cofaces, &converter);
+        println!("{:?}", result);
+        assert!(false);
     }
 
     #[test]
