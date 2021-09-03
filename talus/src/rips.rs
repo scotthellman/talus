@@ -206,7 +206,7 @@ fn rips(distances: Vec<Vec<f64>>, max_dim: Dimension, max_distance: Option<f64>)
     }
 
     // Ripser assumes the complex is ordered by lifetime, then dimension, then by CNS
-    simplices.sort_by(|a, b| a.partial_cmp(b).unwrap()); // TODO: plausibly we can handle nan more gracefully
+    simplices.sort_by(|a, b| b.partial_cmp(a).unwrap()); // TODO: plausibly we can handle nan more gracefully
     simplices
 }
 
@@ -229,6 +229,7 @@ mod tests {
         // full ordering here
         // NOTE it's reverse reverse lexicographic, as we go backwards through the vertices
         // 3, 2, 1, 0, 23, 13, 02, 01, 12, 03, 123, 023, 013, 012, 0123
+        // and then we're doing cohomology so flip that whole thing around
         let converter = SimplexConverter::construct_for_vertex_count_and_dim(dists.len(), 4);
         let expected = vec![
             RichSimplex::from_vertices(&[3], 0., &converter),
@@ -247,6 +248,7 @@ mod tests {
             RichSimplex::from_vertices(&[0, 1, 2], 2., &converter),
             RichSimplex::from_vertices(&[0, 1, 2, 3], 2., &converter),
         ];
+        let expected: Vec<RichSimplex> = expected.into_iter().rev().collect();
         let complex = rips(dists, Dimension::from(4), None);
         assert_eq!(expected, complex);
     }

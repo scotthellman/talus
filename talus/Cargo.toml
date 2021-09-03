@@ -1,0 +1,31 @@
+[package]
+name = "talus"
+version = "0.2.3"
+authors = ["Scott Hellman <scotthellman2@gmail.com>"]
+edition = "2018"
+description = "Computational topology in Rust"
+repository = "https://github.com/scotthellman/talus"
+license = "MIT"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+petgraph = "0.5.0"
+itertools = "0.8.2"
+csv = "1.1"
+kdtree = "0.5.1"
+rand = "0.7.3"
+thiserror = "1.0"
+
+[dev-dependencies]
+proptest = "0.10.1"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies.pyo3]
+version = "0.13.2"
+#features = ["extension-module"]
+
+[package.metadata.maturin]
+requires-dist = ["networkx>=2.0"]
