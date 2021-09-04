@@ -22,10 +22,3 @@ proptest = "0.10.1"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-
-[dependencies.pyo3]
-version = "0.13.2"
-#features = ["extension-module"]
-
-[package.metadata.maturin]
-requires-dist = ["networkx>=2.0"]
