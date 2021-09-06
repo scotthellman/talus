@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use petgraph::graph::{UnGraph, NodeIndex};
-use super::{graph, morse, LabeledPoint};
+use talus::{graph, morse, LabeledPoint};
 use pyo3::prelude::*;
+use pyo3::PyErr;
 use pyo3::exceptions::PyOSError;
 
 
@@ -50,19 +51,6 @@ pub struct MorseFiltrationStepPy {
 }
 
 
-impl std::convert::From<morse::MorseError> for PyErr {
-    fn from(err: morse::MorseError) -> PyErr {
-        PyOSError::new_err(err.to_string())
-    }
-}
-
-impl std::convert::From<graph::GraphError> for PyErr {
-    fn from(err: graph::GraphError) -> PyErr {
-        PyOSError::new_err(err.to_string())
-    }
-}
-
-
 #[pymodule]
 fn talus_python(py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<MorseNode>()?;
@@ -73,18 +61,24 @@ fn talus_python(py: Python, m: &PyModule) -> PyResult<()> {
     fn approximate_knn_persistence_py(points: Vec<MorseNode>, k: usize, sample_rate: f64,
                                       precision: f64) -> PyResult<(MorseComplexData, MorseComplexData)> {
         let labeled_points: Vec<LabeledPoint<Vec<f64>>> = points.into_iter().map(|p| p.clone().into()).collect();
-        let g = graph::build_knn_approximate(&labeled_points, k, sample_rate, precision)?; 
-        let complex = morse::MorseSmaleComplex::from_graph(&g)?;
-        let data = complex.to_data(&g);
+
+        // TODO: map_err is annoying to have to call
+        let g = graph::build_knn_approximate(&labeled_points, k, sample_rate, precision)
+            .map_err(|e| PyOSError::new_err(e.to_string()))?; 
+        let complex = morse::MorseSmaleComplex::from_graph(&g)
+            .map_err(|e| PyOSError::new_err(e.to_string()))?; 
+        let data = MorseComplexData::from_morse_smale_and_graph(&complex, &g);
         Ok(data)
     }
 
     #[pyfn(m, "_persistence_by_knn")]
     fn knn_persistence_py(points: Vec<MorseNode>, k: usize) -> PyResult<(MorseComplexData, MorseComplexData)> {
         let labeled_points: Vec<LabeledPoint<Vec<f64>>> = points.into_iter().map(|p| p.clone().into()).collect();
-        let g = graph::build_knn(&labeled_points, k)?; 
-        let complex = morse::MorseSmaleComplex::from_graph(&g)?;
-        let data = complex.to_data(&g);
+        let g = graph::build_knn(&labeled_points, k) 
+            .map_err(|e| PyOSError::new_err(e.to_string()))?; 
+        let complex = morse::MorseSmaleComplex::from_graph(&g)
+            .map_err(|e| PyOSError::new_err(e.to_string()))?; 
+        let data = MorseComplexData::from_morse_smale_and_graph(&complex, &g);
         Ok(data)
     }
 
@@ -102,8 +96,9 @@ fn talus_python(py: Python, m: &PyModule) -> PyResult<()> {
         for (left, right) in edges.iter() {
             g.add_edge((id_lookup.get(&left).unwrap()).1, id_lookup.get(&right).unwrap().1, 1.);
         }
-        let complex = morse::MorseSmaleComplex::from_graph(&g)?;
-        let data = complex.to_data(&g);
+        let complex = morse::MorseSmaleComplex::from_graph(&g)
+            .map_err(|e| PyOSError::new_err(e.to_string()))?; 
+        let data = MorseComplexData::from_morse_smale_and_graph(&complex, &g);
         Ok(data)
     }
     Ok(())
@@ -122,17 +117,17 @@ pub struct MorseComplexData {
     pub complex: HashMap<i64, i64>
 }
 
-
-impl morse::MorseSmaleComplex {
-    fn to_data<T>(&self, graph: &UnGraph<LabeledPoint<T>, f64>) -> (MorseComplexData, MorseComplexData) {
-        (self.descending_complex.to_data(graph), self.ascending_complex.to_data(graph))
+impl MorseComplexData {
+    fn from_morse_smale_and_graph<T>(complex: &morse::MorseSmaleComplex, graph: &UnGraph<LabeledPoint<T>, f64>) -> (MorseComplexData, MorseComplexData) {
+        let descending = MorseComplexData::from_morse_and_graph(&complex.descending_complex, graph);
+        let ascending = MorseComplexData::from_morse_and_graph(&complex.descending_complex, graph);
+        // FIXME: why am i relying on order to inform on ascending v descending??
+        (descending, ascending)
     }
-}
 
-impl morse::MorseComplex {
-    fn to_data<T>(&self, graph: &UnGraph<LabeledPoint<T>, f64>) -> MorseComplexData {
-        let lifetimes = self.get_persistence();
-        let filtration = &self.filtration;
+    fn from_morse_and_graph<T>(complex: &morse::MorseComplex, graph: &UnGraph<LabeledPoint<T>, f64>) -> MorseComplexData {
+        let lifetimes = complex.get_persistence();
+        let filtration = &complex.filtration;
         let lifetimes: HashMap<i64, f64> = lifetimes.iter()
             .map(|(k,v)| {
                 let id = graph.node_weight(*k).unwrap().id;
@@ -148,7 +143,7 @@ impl morse::MorseComplex {
                 }
             })
             .collect();
-        let complex: HashMap<i64, i64> = self.get_complex().iter()
+        let complex: HashMap<i64, i64> = complex.get_complex().iter()
 
             .map(|(node, ancestor)| {
                 (graph.node_weight(*node).unwrap().id, graph.node_weight(*ancestor).unwrap().id)
@@ -157,3 +152,5 @@ impl morse::MorseComplex {
         MorseComplexData{lifetimes, filtration, complex}
     }
 }
+
+
