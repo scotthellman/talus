@@ -4,6 +4,7 @@ use talus::{graph, morse, LabeledPoint};
 use pyo3::prelude::*;
 use pyo3::PyErr;
 use pyo3::exceptions::PyOSError;
+use pyo3::wrap_pyfunction;
 
 
 #[pyclass]
@@ -51,56 +52,57 @@ pub struct MorseFiltrationStepPy {
 }
 
 
+#[pyfunction(name = "_persistence_by_approximate_knn")]
+fn approximate_knn_persistence_py(points: Vec<MorseNode>, k: usize, sample_rate: f64,
+                                  precision: f64) -> PyResult<(MorseComplexData, MorseComplexData)> {
+    let labeled_points: Vec<LabeledPoint<Vec<f64>>> = points.into_iter().map(|p| p.clone().into()).collect();
+
+    // TODO: map_err is annoying to have to call
+    let g = graph::build_knn_approximate(&labeled_points, k, sample_rate, precision)
+        .map_err(|e| PyOSError::new_err(e.to_string()))?;
+    let complex = morse::MorseSmaleComplex::from_graph(&g)
+        .map_err(|e| PyOSError::new_err(e.to_string()))?;
+    let data = MorseComplexData::from_morse_smale_and_graph(&complex, &g);
+    Ok(data)
+}
+
+#[pyfunction(name = "_persistence_by_knn")]
+fn knn_persistence_py(points: Vec<MorseNode>, k: usize) -> PyResult<(MorseComplexData, MorseComplexData)> {
+    let labeled_points: Vec<LabeledPoint<Vec<f64>>> = points.into_iter().map(|p| p.clone().into()).collect();
+    let g = graph::build_knn(&labeled_points, k)
+        .map_err(|e| PyOSError::new_err(e.to_string()))?;
+    let complex = morse::MorseSmaleComplex::from_graph(&g)
+        .map_err(|e| PyOSError::new_err(e.to_string()))?;
+    let data = MorseComplexData::from_morse_smale_and_graph(&complex, &g);
+    Ok(data)
+}
+
+#[pyfunction(name = "_persistence")]
+fn persistence_py(nodes: Vec<MorseNode>, edges: Vec<(i64, i64)>) -> PyResult<(MorseComplexData, MorseComplexData)> {
+    let mut id_lookup: HashMap<i64, (usize, NodeIndex)> = HashMap::with_capacity(nodes.len());
+    let mut g = UnGraph::new_undirected();
+    for (i, node) in nodes.into_iter().enumerate() {
+        let point: LabeledPoint<Vec<f64>> = node.clone().into();
+        let node = g.add_node(point.clone());
+        id_lookup.insert(point.id, (i, node));
+    }
+    for (left, right) in edges.iter() {
+        g.add_edge((id_lookup.get(&left).unwrap()).1, id_lookup.get(&right).unwrap().1, 1.);
+    }
+    let complex = morse::MorseSmaleComplex::from_graph(&g)
+        .map_err(|e| PyOSError::new_err(e.to_string()))?;
+    let data = MorseComplexData::from_morse_smale_and_graph(&complex, &g);
+    Ok(data)
+}
+
 #[pymodule]
-fn talus_python(py: Python, m: &PyModule) -> PyResult<()> {
+fn talus_python(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<MorseNode>()?;
     m.add_class::<MorseFiltrationStepPy>()?;
     m.add_class::<MorseComplexData>()?;
-
-    #[pyfn(m, "_persistence_by_approximate_knn")]
-    fn approximate_knn_persistence_py(points: Vec<MorseNode>, k: usize, sample_rate: f64,
-                                      precision: f64) -> PyResult<(MorseComplexData, MorseComplexData)> {
-        let labeled_points: Vec<LabeledPoint<Vec<f64>>> = points.into_iter().map(|p| p.clone().into()).collect();
-
-        // TODO: map_err is annoying to have to call
-        let g = graph::build_knn_approximate(&labeled_points, k, sample_rate, precision)
-            .map_err(|e| PyOSError::new_err(e.to_string()))?; 
-        let complex = morse::MorseSmaleComplex::from_graph(&g)
-            .map_err(|e| PyOSError::new_err(e.to_string()))?; 
-        let data = MorseComplexData::from_morse_smale_and_graph(&complex, &g);
-        Ok(data)
-    }
-
-    #[pyfn(m, "_persistence_by_knn")]
-    fn knn_persistence_py(points: Vec<MorseNode>, k: usize) -> PyResult<(MorseComplexData, MorseComplexData)> {
-        let labeled_points: Vec<LabeledPoint<Vec<f64>>> = points.into_iter().map(|p| p.clone().into()).collect();
-        let g = graph::build_knn(&labeled_points, k) 
-            .map_err(|e| PyOSError::new_err(e.to_string()))?; 
-        let complex = morse::MorseSmaleComplex::from_graph(&g)
-            .map_err(|e| PyOSError::new_err(e.to_string()))?; 
-        let data = MorseComplexData::from_morse_smale_and_graph(&complex, &g);
-        Ok(data)
-    }
-
-    #[pyfn(m, "_persistence")]
-    fn persistence_py(nodes: Vec<MorseNode>, edges: Vec<(i64, i64)>) -> PyResult<(MorseComplexData, MorseComplexData)> {
-        let mut labeled_nodes: Vec<NodeIndex> = Vec::with_capacity(nodes.len());
-        let mut id_lookup: HashMap<i64, (usize, NodeIndex)> = HashMap::with_capacity(nodes.len());
-        let mut g = UnGraph::new_undirected();
-        for (i, node) in nodes.into_iter().enumerate() {
-            let point: LabeledPoint<Vec<f64>> = node.clone().into();
-            let node = g.add_node(point.clone());
-            labeled_nodes.push(node);
-            id_lookup.insert(point.id, (i, node));
-        }
-        for (left, right) in edges.iter() {
-            g.add_edge((id_lookup.get(&left).unwrap()).1, id_lookup.get(&right).unwrap().1, 1.);
-        }
-        let complex = morse::MorseSmaleComplex::from_graph(&g)
-            .map_err(|e| PyOSError::new_err(e.to_string()))?; 
-        let data = MorseComplexData::from_morse_smale_and_graph(&complex, &g);
-        Ok(data)
-    }
+    m.add_function(wrap_pyfunction!(approximate_knn_persistence_py, m)?)?;
+    m.add_function(wrap_pyfunction!(knn_persistence_py, m)?)?;
+    m.add_function(wrap_pyfunction!(persistence_py, m)?)?;
     Ok(())
 }
 

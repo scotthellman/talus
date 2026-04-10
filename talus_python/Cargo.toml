@@ -21,7 +21,7 @@ proptest = "0.10.1"
 crate-type = ["cdylib", "lib"]
 
 [dependencies.pyo3]
-version = "0.14.4"
+version = "0.28.3"
 features = ["extension-module"]
 
 [package.metadata.maturin]
