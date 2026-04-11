@@ -1,7 +1,7 @@
-[package]
+[project]
 name = "talus_python"
 version = "0.2.3"
-authors = ["Scott Hellman <scotthellman2@gmail.com>"]
+authors = [{name = "Scott Hellman", email = "scotthellman2@gmail.com"}]
 edition = "2018"
 description = "Computational topology in Rust"
 repository = "https://github.com/scotthellman/talus"
@@ -11,8 +11,8 @@ dependencies = ["networkx>=2.0"]
 
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
 
-[tool.hatch.build.targets.wheel]
-packages = ["talus_python"]
+[tool.maturin]
+features = ["pyo3/extension-module"]
