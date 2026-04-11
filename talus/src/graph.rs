@@ -69,12 +69,12 @@ impl Eq for NeighborData {}
 
 
 fn sample_neighbors(neighbors: &mut Vec<NeighborData>, sample_rate: f64) -> HashSet<NeighborData> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut targets = HashSet::with_capacity(neighbors.len());
     for neighbor in neighbors.iter_mut() {
         match neighbor.state {
             NeighborState::New => {
-                if rng.gen_range(0., 1.) < sample_rate {
+                if rng.random_range(0.0..1.0) < sample_rate {
                     targets.insert(*neighbor);
                     neighbor.state = NeighborState::Old;
                 }
@@ -128,13 +128,13 @@ fn update_neighbors(data: &mut Vec<NeighborData>, data_idx: usize, neighbor: usi
     false
 }
 
-fn rejection_sample(count: usize, range: usize, rng: &mut ThreadRng) -> Result<Vec<usize>, GraphError> {
+fn rejection_sample(count: usize, range: usize, rng: &mut rand::rngs::ThreadRng) -> Result<Vec<usize>, GraphError> {
     if range < count {
         return Err(GraphError::KTooLarge{k: count, num_points: range})
     }
     let mut sample: HashSet<usize> = HashSet::with_capacity(count);
     while sample.len() < count {
-        sample.insert(rng.gen_range(0, range));
+        sample.insert(rng.random_range(0..range));
     }
     Ok(sample.iter().copied().collect())
 }
@@ -162,7 +162,7 @@ pub fn build_knn_approximate<T: PreMetric + Clone>(points: &[LabeledPoint<T>], k
         return Err(GraphError::NanInPoints{})
     }
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let mut approximate_neighbors = Vec::with_capacity(points.len());
     for _ in 0..(points.len()) {
         let points = rejection_sample(k, points.len(), &mut rng)?;
