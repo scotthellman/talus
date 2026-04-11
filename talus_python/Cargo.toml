@@ -24,5 +24,3 @@ crate-type = ["cdylib", "lib"]
 version = "0.28.3"
 features = ["extension-module"]
 
-[package.metadata.maturin]
-requires-dist = ["networkx>=2.0"]

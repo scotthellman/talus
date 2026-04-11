@@ -1,0 +1,18 @@
+[package]
+name = "talus_python"
+version = "0.2.3"
+authors = ["Scott Hellman <scotthellman2@gmail.com>"]
+edition = "2018"
+description = "Computational topology in Rust"
+repository = "https://github.com/scotthellman/talus"
+license = "MIT"
+
+dependencies = ["networkx>=2.0"]
+
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["talus_python"]
