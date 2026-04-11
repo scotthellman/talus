@@ -1,11 +1,9 @@
 [project]
 name = "talus_python"
-version = "0.2.3"
+version = "0.3.0"
 authors = [{name = "Scott Hellman", email = "scotthellman2@gmail.com"}]
-edition = "2018"
-description = "Computational topology in Rust"
-repository = "https://github.com/scotthellman/talus"
 license = "MIT"
+repository = "https://github.com/scotthellman/talus"
 
 dependencies = ["networkx>=2.0"]
 

@@ -4,3 +4,7 @@ members = [
     "talus",
     "talus_python"
 ]
+
+# Uncomment to use local talus when testing changes:
+# [patch.crates-io]
+# talus = { path = "talus" }

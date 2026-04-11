@@ -10,3 +10,5 @@ Cargo.lock
 venv
 
 .ipynb_checkpoints
+
+talus_python/target/
