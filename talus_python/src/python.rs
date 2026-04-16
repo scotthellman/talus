@@ -122,7 +122,7 @@ pub struct MorseComplexData {
 impl MorseComplexData {
     fn from_morse_smale_and_graph<T>(complex: &morse::MorseSmaleComplex, graph: &UnGraph<LabeledPoint<T>, f64>) -> (MorseComplexData, MorseComplexData) {
         let descending = MorseComplexData::from_morse_and_graph(&complex.descending_complex, graph);
-        let ascending = MorseComplexData::from_morse_and_graph(&complex.descending_complex, graph);
+        let ascending = MorseComplexData::from_morse_and_graph(&complex.ascending_complex, graph);
         // FIXME: why am i relying on order to inform on ascending v descending??
         (descending, ascending)
     }
