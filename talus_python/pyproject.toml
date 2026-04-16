@@ -4,6 +4,8 @@ version = "0.3.0"
 authors = [{name = "Scott Hellman", email = "scotthellman2@gmail.com"}]
 license = "MIT"
 repository = "https://github.com/scotthellman/talus"
+description = "Rust-powered computational topology"
+readme = "README.md"
 
 dependencies = ["networkx>=2.0"]
 
